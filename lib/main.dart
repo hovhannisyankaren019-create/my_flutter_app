@@ -2137,105 +2137,94 @@ class _ChapterTextScreenState extends State<ChapterTextScreen> {
     bool hasPreviousChapter,
     bool hasNextChapter,
   ) {
-    return Container(
-      height: 60, // ՆՎԱԶԵՑՐԵՔ բարձրությունը
-      child: Column(
-        // ՓՈԽԱՐԻՆԵՔ Row-ը Column-ով
-        mainAxisAlignment: MainAxisAlignment.start, // Սլաքները կլինեն վերեւում
-        children: [
-          SizedBox(height: 8), // Վերեւի padding
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              // ՁԱԽ ՍԼԱՔԸ
-              GestureDetector(
-                onTap: hasPreviousChapter
-                    ? () => _openChapter(widget.chapterNumber - 1)
-                    : null,
-                child: Container(
-                  width: 44, // ՄԵԾԱՑՐԵՔ
-                  height: 44, // ՄԵԾԱՑՐԵՔ
-                  margin: EdgeInsets.symmetric(horizontal: 10),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    // Цвет как у остальных кнопок (Elevated): серый и в светлой, и в тёмной теме
-                    color: hasPreviousChapter
-                        ? Colors.grey[800]
-                        : Colors.grey[700],
-
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
-                        blurRadius: 4,
-                        offset: Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Icon(
-                    Icons.arrow_back_ios,
-                    size: 25,
-                    color: hasPreviousChapter
-                        ? (isDark ? const Color.fromARGB(255, 255, 255, 255) : const Color.fromARGB(255, 255, 255, 255))
-                        : const Color.fromARGB(255, 255, 255, 255),
-                  ),
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        GestureDetector(
+          onTap: hasPreviousChapter
+              ? () => _openChapter(widget.chapterNumber - 1)
+              : null,
+          child: Container(
+            width: 44,
+            height: 44,
+            margin: const EdgeInsets.symmetric(horizontal: 10),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: hasPreviousChapter ? Colors.grey[800] : Colors.grey[700],
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
                 ),
+              ],
+            ),
+            child: const Padding(
+              padding: EdgeInsets.only(right: 2),
+              child: Icon(
+                Icons.arrow_back_ios_new,
+                size: 18,
+                color: Colors.white,
               ),
-
-              // ԿԵՆՏՐՈՆԻ ՏԵՔՍՏԸ
-              Container(
-                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                decoration: BoxDecoration(
-                  color: isDark ? const Color.fromARGB(255, 19, 19, 19) : Colors.grey[350],
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  ' ${widget.chapterNumber}',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                    color: isDark ? Colors.white : const Color.fromARGB(255, 0, 0, 0),
-                  ),
-                ),
-              ),
-
-              // ԱՋ ՍԼԱՔԸ
-              GestureDetector(
-                onTap: hasNextChapter
-                    ? () => _openChapter(widget.chapterNumber + 1)
-                    : null,
-                child: Container(
-                  width: 44,
-                  height: 44,
-                  margin: EdgeInsets.symmetric(horizontal: 10),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    // Цвет как у остальных кнопок (Elevated): серый и в светлой, и в тёмной теме
-                    color: hasNextChapter
-                        ? Colors.grey[800]
-                        : Colors.grey[700],
-
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color.fromARGB(255, 19, 19, 19).withOpacity(0.1),
-                        blurRadius: 4,
-                        offset: Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Icon(
-                    Icons.arrow_forward_ios,
-                    size: 25,
-                    color: hasNextChapter
-                        ? (isDark ? const Color.fromARGB(255, 255, 255, 255): const Color.fromARGB(255, 255, 255, 255))
-                        : const Color.fromARGB(255, 255, 255, 255),
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
-          // Կարող եք ավելացնել SizedBox(height: 8) ներքեւի համար, եթե ուզում եք
-        ],
-      ),
+        ),
+        Container(
+          height: 44,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: isDark
+                ? const Color.fromARGB(255, 19, 19, 19)
+                : Colors.grey[350],
+            borderRadius: BorderRadius.circular(22),
+          ),
+          child: Text(
+            '${widget.chapterNumber}',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+              height: 1.0,
+              color: isDark
+                  ? Colors.white
+                  : const Color.fromARGB(255, 0, 0, 0),
+            ),
+          ),
+        ),
+        GestureDetector(
+          onTap: hasNextChapter
+              ? () => _openChapter(widget.chapterNumber + 1)
+              : null,
+          child: Container(
+            width: 44,
+            height: 44,
+            margin: const EdgeInsets.symmetric(horizontal: 10),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: hasNextChapter ? Colors.grey[800] : Colors.grey[700],
+              boxShadow: [
+                BoxShadow(
+                  color: const Color.fromARGB(255, 19, 19, 19).withOpacity(0.1),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: const Padding(
+              padding: EdgeInsets.only(left: 2),
+              child: Icon(
+                Icons.arrow_forward_ios,
+                size: 18,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -2584,6 +2573,7 @@ class _ChapterTextScreenState extends State<ChapterTextScreen> {
             ),
             Container(
               height: 100,
+              alignment: Alignment.center,
               decoration: BoxDecoration(
                 color: isDark ? const Color.fromARGB(255, 0, 0, 0) : Colors.grey[100],
                 border: Border(
@@ -3450,130 +3440,125 @@ class _ChapterTextScreenWithHighlightState
             ),
             Container(
               height: 100,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.start,
+              alignment: Alignment.center,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      // ՁԱԽ ՍԼԱՔԸ
-                      GestureDetector(
-                        onTap: hasPreviousChapter
-                            ? () {
-                                Navigator.pushReplacement(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) =>
-                                        ChapterTextScreenWithHighlight(
-                                          bookName: widget.bookName,
-                                          chapterNumber:
-                                              widget.chapterNumber - 1,
-                                          searchQuery: widget.searchQuery,
-                                          targetVerse: null,
-                                          targetWord: null,
-                                        ),
-                                  ),
-                                );
-                              }
-                            : null,
-                        child: Container(
-                          width: 44,
-                          height: 44,
-                          margin: EdgeInsets.symmetric(horizontal: 10),
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            // Цвет как у остальных кнопок (Elevated)
-                            color: hasPreviousChapter
-                                ? Colors.grey[800]
-                                : Colors.grey[700],
-
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.1),
-                                blurRadius: 4,
-                                offset: Offset(0, 2),
+                  GestureDetector(
+                    onTap: hasPreviousChapter
+                        ? () {
+                            Navigator.pushReplacement(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    ChapterTextScreenWithHighlight(
+                                      bookName: widget.bookName,
+                                      chapterNumber: widget.chapterNumber - 1,
+                                      searchQuery: widget.searchQuery,
+                                      targetVerse: null,
+                                      targetWord: null,
+                                    ),
                               ),
-                            ],
+                            );
+                          }
+                        : null,
+                    child: Container(
+                      width: 44,
+                      height: 44,
+                      margin: const EdgeInsets.symmetric(horizontal: 10),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: hasPreviousChapter
+                            ? Colors.grey[800]
+                            : Colors.grey[700],
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.1),
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
                           ),
-                          child: Icon(
-                            Icons.arrow_back_ios,
-                            size: 20,
-                            // Иконки делаем белыми как у остальных кнопок навигации
-                            color: hasPreviousChapter
-                                ? Colors.white
-                                : Colors.grey,
-                          ),
+                        ],
+                      ),
+                      child: const Padding(
+                        padding: EdgeInsets.only(right: 2),
+                        child: Icon(
+                          Icons.arrow_back_ios_new,
+                          size: 18,
+                          color: Colors.white,
                         ),
                       ),
-
-                      // ԿԵՆՏՐՈՆԻ ՏԵՔՍՏԸ
-                      Container(
-                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                decoration: BoxDecoration(
-                  color: isDark ? const Color.fromARGB(255, 19, 19, 19) : Colors.grey[350],
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  ' ${widget.chapterNumber}',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                    color: isDark ? Colors.white : const Color.fromARGB(255, 0, 0, 0),
+                    ),
                   ),
-                ),
-              ),
-
-                      // ԱՋ ՍԼԱՔԸ
-                      GestureDetector(
-                        onTap: hasNextChapter
-                            ? () {
-                                Navigator.pushReplacement(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) =>
-                                        ChapterTextScreenWithHighlight(
-                                          bookName: widget.bookName,
-                                          chapterNumber:
-                                              widget.chapterNumber + 1,
-                                          searchQuery: widget.searchQuery,
-                                          targetVerse: null,
-                                          targetWord: null,
-                                        ),
-                                  ),
-                                );
-                              }
-                            : null,
-                        child: Container(
-                          width: 44,
-                          height: 44,
-                          margin: EdgeInsets.symmetric(horizontal: 10),
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            // Цвет как у остальных кнопок (Elevated)
-                            color: hasNextChapter
-                                ? Colors.grey[800]
-                                : Colors.grey[700],
-
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.1),
-                                blurRadius: 4,
-                                offset: Offset(0, 2),
+                  Container(
+                    height: 44,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? const Color.fromARGB(255, 19, 19, 19)
+                          : Colors.grey[350],
+                      borderRadius: BorderRadius.circular(22),
+                    ),
+                    child: Text(
+                      '${widget.chapterNumber}',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                        height: 1.0,
+                        color: isDark
+                            ? Colors.white
+                            : const Color.fromARGB(255, 0, 0, 0),
+                      ),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: hasNextChapter
+                        ? () {
+                            Navigator.pushReplacement(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    ChapterTextScreenWithHighlight(
+                                      bookName: widget.bookName,
+                                      chapterNumber: widget.chapterNumber + 1,
+                                      searchQuery: widget.searchQuery,
+                                      targetVerse: null,
+                                      targetWord: null,
+                                    ),
                               ),
-                            ],
+                            );
+                          }
+                        : null,
+                    child: Container(
+                      width: 44,
+                      height: 44,
+                      margin: const EdgeInsets.symmetric(horizontal: 10),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: hasNextChapter
+                            ? Colors.grey[800]
+                            : Colors.grey[700],
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.1),
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
                           ),
-                          child: Icon(
-                            Icons.arrow_forward_ios,
-                            size: 20,
-                            // Иконки делаем белыми как у остальных кнопок навигации
-                            color: hasNextChapter
-                                ? Colors.white
-                                : const Color.fromARGB(255, 255, 255, 255),
-                          ),
+                        ],
+                      ),
+                      child: const Padding(
+                        padding: EdgeInsets.only(left: 2),
+                        child: Icon(
+                          Icons.arrow_forward_ios,
+                          size: 18,
+                          color: Colors.white,
                         ),
                       ),
-                    ],
+                    ),
                   ),
                 ],
               ),
