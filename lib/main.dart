@@ -644,7 +644,7 @@ class BooksScreen extends StatelessWidget {
   }
 }
 
-class ChaptersScreen extends StatelessWidget {
+class ChaptersScreen extends StatefulWidget {
   final String bookName;
   final int chapters;
 
@@ -655,52 +655,161 @@ class ChaptersScreen extends StatelessWidget {
   });
 
   @override
+  State<ChaptersScreen> createState() => _ChaptersScreenState();
+}
+
+class _ChaptersScreenState extends State<ChaptersScreen> {
+  int _tabIndex = 0;
+  int? _selectedChapter;
+
+  List<int> _verseNumbersFor(int chapterNumber) {
+    final text = bibleText[widget.bookName]?[chapterNumber] ?? '';
+    final verses = VerseHelper.parseVerses(text);
+    if (verses.isEmpty) return const [1];
+    final numbers = verses.keys.toList()..sort();
+    return numbers;
+  }
+
+  void _openChapter(int chapterNumber, {int? targetVerse}) {
+    final text = bibleText[widget.bookName]?[chapterNumber] ??
+        'Տեքստը դեռ չի ավելացվել';
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ChapterTextScreen(
+          bookName: widget.bookName,
+          chapterNumber: chapterNumber,
+          text: text,
+          targetVerse: targetVerse,
+        ),
+      ),
+    );
+  }
+
+  Widget _numberButton({
+    required String label,
+    required bool selected,
+    required VoidCallback onPressed,
+  }) {
+    return ElevatedButton(
+      style: ElevatedButton.styleFrom(
+        shape: const CircleBorder(),
+        padding: const EdgeInsets.all(0),
+        minimumSize: const Size(56, 56),
+        textStyle: const TextStyle(fontSize: 16),
+        backgroundColor: selected ? Colors.white : Colors.grey[800],
+        foregroundColor: selected ? Colors.black : Colors.white,
+      ),
+      onPressed: onPressed,
+      child: Center(child: Text(label)),
+    );
+  }
+
+  Widget _tabChip(String title, int index, {bool enabled = true}) {
+    final selected = _tabIndex == index;
+    return Expanded(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        child: ElevatedButton(
+          onPressed: enabled
+              ? () => setState(() => _tabIndex = index)
+              : null,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: selected ? Colors.white : Colors.grey[800],
+            foregroundColor: selected ? Colors.black : Colors.white,
+            disabledBackgroundColor: Colors.grey[700],
+            disabledForegroundColor: Colors.white54,
+          ),
+          child: Text(title),
+        ),
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final verseNumbers = _selectedChapter == null
+        ? const <int>[]
+        : _verseNumbersFor(_selectedChapter!);
+
     return Scaffold(
       appBar: AppBar(
-        title: Text(bookName),
+        title: Text(
+          _selectedChapter == null
+              ? widget.bookName
+              : '${widget.bookName} $_selectedChapter',
+        ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),
           onPressed: () => Navigator.pop(context),
         ),
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(25.0),
-        child: GridView.builder(
-          itemCount: chapters,
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 5,
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 12,
-            childAspectRatio: 1,
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Row(
+              children: [
+                _tabChip('Գլուխ', 0),
+                _tabChip('Համար', 1, enabled: _selectedChapter != null),
+              ],
+            ),
           ),
-          itemBuilder: (context, index) {
-            final chapterNumber = index + 1;
-            return ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                shape: const CircleBorder(),
-                padding: const EdgeInsets.all(0),
-                minimumSize: const Size(56, 56),
-                textStyle: const TextStyle(fontSize: 16),
-              ),
-              onPressed: () {
-                final text = bibleText[bookName]?[chapterNumber] ??
-                    'Տեքստը դեռ չի ավելացվել';
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => ChapterTextScreen(
-                      bookName: bookName,
-                      chapterNumber: chapterNumber,
-                      text: text,
+          Expanded(
+            child: _tabIndex == 0
+                ? Padding(
+                    padding: const EdgeInsets.all(25.0),
+                    child: GridView.builder(
+                      itemCount: widget.chapters,
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 5,
+                        mainAxisSpacing: 12,
+                        crossAxisSpacing: 12,
+                        childAspectRatio: 1,
+                      ),
+                      itemBuilder: (context, index) {
+                        final chapterNumber = index + 1;
+                        final selected = _selectedChapter == chapterNumber;
+                        return _numberButton(
+                          label: '$chapterNumber',
+                          selected: selected,
+                          onPressed: () {
+                            setState(() {
+                              _selectedChapter = chapterNumber;
+                              _tabIndex = 1;
+                            });
+                          },
+                        );
+                      },
+                    ),
+                  )
+                : Padding(
+                    padding: const EdgeInsets.all(25.0),
+                    child: GridView.builder(
+                      itemCount: verseNumbers.length,
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 5,
+                        mainAxisSpacing: 12,
+                        crossAxisSpacing: 12,
+                        childAspectRatio: 1,
+                      ),
+                      itemBuilder: (context, index) {
+                        final verseNumber = verseNumbers[index];
+                        return _numberButton(
+                          label: '$verseNumber',
+                          selected: false,
+                          onPressed: () => _openChapter(
+                            _selectedChapter!,
+                            targetVerse: verseNumber,
+                          ),
+                        );
+                      },
                     ),
                   ),
-                );
-              },
-              child: Center(child: Text('$chapterNumber')),
-            );
-          },
-        ),
+          ),
+        ],
       ),
     );
   }
