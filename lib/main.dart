@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'dart:async';
+import 'dart:math' as math;
 
 const String _readerFontSizePrefsKey = 'reader_font_size';
 const double _defaultReaderFontSize = 20;
+const Color _verseTapHighlight = Color(0x332196F3);
 
 void main() {
   runApp(const BibleApp());
@@ -413,9 +416,17 @@ class _SavedVersesScreenState extends State<SavedVersesScreen> {
                       onTap: () {
                         final text = bibleText[bookName]?[chapterNumber] ??
                             'Տեքստը դեռ չի ավելացվել';
-                        final targetVerse = range != null && range.contains('-')
-                            ? int.parse(range.split('-')[0])
-                            : verseNumber;
+                        final List<int> selectedVerses;
+                        if (range != null && range.contains('-')) {
+                          final parts = range.split('-');
+                          final start = int.parse(parts[0]);
+                          final end = int.parse(parts[1]);
+                          selectedVerses = [
+                            for (int n = start; n <= end; n++) n,
+                          ];
+                        } else {
+                          selectedVerses = [verseNumber];
+                        }
 
                         Navigator.push(
                           context,
@@ -424,7 +435,8 @@ class _SavedVersesScreenState extends State<SavedVersesScreen> {
                               bookName: bookName,
                               chapterNumber: chapterNumber,
                               text: text,
-                              targetVerse: targetVerse,
+                              targetVerse: selectedVerses.first,
+                              initialSelectedVerses: selectedVerses,
                             ),
                           ),
                         );
@@ -607,35 +619,58 @@ class BooksScreen extends StatelessWidget {
             ),
           ),
           Expanded(
-            child: Padding(
-              padding: const EdgeInsets.all(20.0),
-              child: GridView.builder(
-                itemCount: combined.length,
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  mainAxisSpacing: 12,
-                  crossAxisSpacing: 12,
-                  childAspectRatio: 4,
-                ),
-                itemBuilder: (context, index) {
-                  final book = combined[index];
-                  return ElevatedButton(
-                    onPressed: () {
-                      final chapters = chapterCounts[book] ?? 1;
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => ChaptersScreen(
-                            bookName: book,
-                            chapters: chapters,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final isNarrow = constraints.maxWidth < 360;
+                final padding = isNarrow ? 12.0 : 20.0;
+                final spacing = isNarrow ? 8.0 : 12.0;
+                final innerWidth = constraints.maxWidth - padding * 2;
+                final cellWidth = (innerWidth - spacing) / 2;
+                final cellHeight = math.max(48.0, math.min(56.0, cellWidth / 3.2));
+                return Padding(
+                  padding: EdgeInsets.all(padding),
+                  child: GridView.builder(
+                    itemCount: combined.length,
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      mainAxisSpacing: spacing,
+                      crossAxisSpacing: spacing,
+                      childAspectRatio: cellWidth / cellHeight,
+                    ),
+                    itemBuilder: (context, index) {
+                      final book = combined[index];
+                      return ElevatedButton(
+                        onPressed: () {
+                          final chapters = chapterCounts[book] ?? 1;
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => ChaptersScreen(
+                                bookName: book,
+                                chapters: chapters,
+                              ),
+                            ),
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            book,
+                            maxLines: 1,
+                            textAlign: TextAlign.center,
                           ),
                         ),
                       );
                     },
-                    child: Text(book),
-                  );
-                },
-              ),
+                  ),
+                );
+              },
             ),
           ),
         ],
@@ -691,17 +726,41 @@ class _ChaptersScreenState extends State<ChaptersScreen> {
     required bool selected,
     required VoidCallback onPressed,
   }) {
-    return ElevatedButton(
-      style: ElevatedButton.styleFrom(
-        shape: const CircleBorder(),
-        padding: const EdgeInsets.all(0),
-        minimumSize: const Size(56, 56),
-        textStyle: const TextStyle(fontSize: 16),
-        backgroundColor: selected ? Colors.white : Colors.grey[800],
-        foregroundColor: selected ? Colors.black : Colors.white,
-      ),
-      onPressed: onPressed,
-      child: Center(child: Text(label)),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final side = math.min(constraints.maxWidth, constraints.maxHeight);
+        return Center(
+          child: SizedBox(
+            width: side,
+            height: side,
+            child: Material(
+              color: selected ? Colors.white : Colors.grey[800],
+              shape: const CircleBorder(),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: onPressed,
+                child: Padding(
+                  padding: const EdgeInsets.all(6),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      label,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                        height: 1,
+                        color: selected ? Colors.black : Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -720,7 +779,10 @@ class _ChaptersScreenState extends State<ChaptersScreen> {
             disabledBackgroundColor: Colors.grey[700],
             disabledForegroundColor: Colors.white54,
           ),
-          child: Text(title),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(title),
+          ),
         ),
       ),
     );
@@ -734,10 +796,14 @@ class _ChaptersScreenState extends State<ChaptersScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          _selectedChapter == null
-              ? widget.bookName
-              : '${widget.bookName} $_selectedChapter',
+        title: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            _selectedChapter == null
+                ? widget.bookName
+                : '${widget.bookName} $_selectedChapter',
+            maxLines: 1,
+          ),
         ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),
@@ -756,58 +822,61 @@ class _ChaptersScreenState extends State<ChaptersScreen> {
             ),
           ),
           Expanded(
-            child: _tabIndex == 0
-                ? Padding(
-                    padding: const EdgeInsets.all(25.0),
-                    child: GridView.builder(
-                      itemCount: widget.chapters,
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 5,
-                        mainAxisSpacing: 12,
-                        crossAxisSpacing: 12,
-                        childAspectRatio: 1,
-                      ),
-                      itemBuilder: (context, index) {
-                        final chapterNumber = index + 1;
-                        final selected = _selectedChapter == chapterNumber;
-                        return _numberButton(
-                          label: '$chapterNumber',
-                          selected: selected,
-                          onPressed: () {
-                            setState(() {
-                              _selectedChapter = chapterNumber;
-                              _tabIndex = 1;
-                            });
-                          },
-                        );
-                      },
-                    ),
-                  )
-                : Padding(
-                    padding: const EdgeInsets.all(25.0),
-                    child: GridView.builder(
-                      itemCount: verseNumbers.length,
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 5,
-                        mainAxisSpacing: 12,
-                        crossAxisSpacing: 12,
-                        childAspectRatio: 1,
-                      ),
-                      itemBuilder: (context, index) {
-                        final verseNumber = verseNumbers[index];
-                        return _numberButton(
-                          label: '$verseNumber',
-                          selected: false,
-                          onPressed: () => _openChapter(
-                            _selectedChapter!,
-                            targetVerse: verseNumber,
-                          ),
-                        );
-                      },
-                    ),
-                  ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final isNarrow = constraints.maxWidth < 360;
+                final padding = isNarrow ? 12.0 : 20.0;
+                final spacing = isNarrow ? 8.0 : 12.0;
+                final grid = _tabIndex == 0
+                    ? GridView.builder(
+                        itemCount: widget.chapters,
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 5,
+                          mainAxisSpacing: spacing,
+                          crossAxisSpacing: spacing,
+                          childAspectRatio: 1,
+                        ),
+                        itemBuilder: (context, index) {
+                          final chapterNumber = index + 1;
+                          final selected = _selectedChapter == chapterNumber;
+                          return _numberButton(
+                            label: '$chapterNumber',
+                            selected: selected,
+                            onPressed: () {
+                              setState(() {
+                                _selectedChapter = chapterNumber;
+                                _tabIndex = 1;
+                              });
+                            },
+                          );
+                        },
+                      )
+                    : GridView.builder(
+                        itemCount: verseNumbers.length,
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 5,
+                          mainAxisSpacing: spacing,
+                          crossAxisSpacing: spacing,
+                          childAspectRatio: 1,
+                        ),
+                        itemBuilder: (context, index) {
+                          final verseNumber = verseNumbers[index];
+                          return _numberButton(
+                            label: '$verseNumber',
+                            selected: false,
+                            onPressed: () => _openChapter(
+                              _selectedChapter!,
+                              targetVerse: verseNumber,
+                            ),
+                          );
+                        },
+                      );
+                return Padding(
+                  padding: EdgeInsets.all(padding),
+                  child: grid,
+                );
+              },
+            ),
           ),
         ],
       ),
@@ -844,6 +913,66 @@ class VerseHelper {
     }
 
     return verses;
+  }
+
+  static Future<void> scrollToVerse({
+    required ScrollController controller,
+    required GlobalKey? Function() keyOf,
+    required bool Function() isMounted,
+    int attempt = 0,
+    VoidCallback? onDone,
+  }) async {
+    if (!isMounted() || attempt > 40) {
+      if (isMounted()) onDone?.call();
+      return;
+    }
+
+    await Future<void>.delayed(
+      Duration(milliseconds: attempt == 0 ? 50 : 80),
+    );
+    if (!isMounted()) return;
+
+    final key = keyOf();
+    final ctx = key?.currentContext;
+    final renderObject = ctx?.findRenderObject();
+    if (ctx == null || renderObject == null || !renderObject.attached) {
+      await scrollToVerse(
+        controller: controller,
+        keyOf: keyOf,
+        isMounted: isMounted,
+        attempt: attempt + 1,
+        onDone: onDone,
+      );
+      return;
+    }
+
+    try {
+      if (controller.hasClients) {
+        final viewport = RenderAbstractViewport.of(renderObject);
+        final revealed = viewport.getOffsetToReveal(renderObject, 0.18);
+        final position = controller.position;
+        final target = revealed.offset.clamp(
+          position.minScrollExtent,
+          position.maxScrollExtent,
+        );
+        await controller.animateTo(
+          target,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+        );
+        if (isMounted()) onDone?.call();
+        return;
+      }
+    } catch (_) {}
+
+    if (!isMounted()) return;
+    await Scrollable.ensureVisible(
+      ctx,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+      alignment: 0.18,
+    );
+    if (isMounted()) onDone?.call();
   }
 
   static String? getVerseText(String text, int verseNumber) {
@@ -997,6 +1126,7 @@ class VerseHelper {
     void Function(int verseNumber, String verseText)? onVerseSelectToggle,
     Function(String, int, int, String, String?)? onVerseAction,
     double readerFontSize = _defaultReaderFontSize,
+    int? targetVerse,
   }) {
     final List<InlineSpan> children = [];
     final textTheme = Theme.of(context).textTheme.bodyMedium;
@@ -1193,94 +1323,84 @@ class VerseHelper {
 
         final verseKey = 'verse_$verseNumber';
         final verseNumKey = 'verse_${verseNumber}_num';
+        final bool isJumpTarget = targetVerse == verseNumber;
         final bool highlightVerse = enableMultiSelect
             ? (multiSelectedVerses?.contains(verseNumber) ?? false)
             : (selectedWordKey == verseKey || selectedWordKey == verseNumKey);
 
-        if (verseKeys != null) {
-          final key = verseKeys.putIfAbsent(verseNumber, () => GlobalKey());
-          children.add(
-            WidgetSpan(
-              child: Container(
-                key: key,
-                child: GestureDetector(
-                  onTap: () {
-                    if (enableMultiSelect) {
-                      onVerseSelectToggle?.call(verseNumber, verseText);
-                    } else {
-                      VerseHelper.handleVerseNumberClick(
-                        context,
-                        bookName,
-                        chapterNumber,
-                        verseNumber,
-                        verseText,
-                        onWordClick: onWordClick,
-                      );
-                    }
-                  },
-                  onLongPress: () {
-                    if (onVerseAction != null) {
-                      onVerseAction(
-                        bookName,
-                        chapterNumber,
-                        verseNumber,
-                        verseText,
-                        verseNumKey,
-                      );
-                    } else {
-                      VerseHelper.handleVerseNumberClick(
-                        context,
-                        bookName,
-                        chapterNumber,
-                        verseNumber,
-                        verseText,
-                        onWordClick: onWordClick,
-                      );
-                    }
-                  },
-                  child: Text(
-                    '$verseNumber ',
-                    style: baseStyle.copyWith(
-                      fontWeight: FontWeight.w400,
-                      color: isDark ? Colors.grey[400] : Colors.grey[600],
-                      backgroundColor:
-                          highlightVerse ? Colors.blue.withAlpha(51) : null,
-                    ),
+        final GlobalKey? verseAnchorKey = verseKeys == null
+            ? null
+            : verseKeys.putIfAbsent(verseNumber, () => GlobalKey());
+        children.add(
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: Container(
+              key: verseAnchorKey,
+              margin: const EdgeInsets.only(right: 4),
+              padding: isJumpTarget
+                  ? const EdgeInsets.all(5)
+                  : EdgeInsets.zero,
+              decoration: isJumpTarget
+                  ? BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: _verseTapHighlight,
+                      border: Border.all(
+                        color: _verseTapHighlight,
+                        width: 1.7,
+                      ),
+                    )
+                  : null,
+              child: GestureDetector(
+                onTap: () {
+                  if (enableMultiSelect) {
+                    onVerseSelectToggle?.call(verseNumber, verseText);
+                  } else {
+                    VerseHelper.handleVerseNumberClick(
+                      context,
+                      bookName,
+                      chapterNumber,
+                      verseNumber,
+                      verseText,
+                      onWordClick: onWordClick,
+                    );
+                  }
+                },
+                onLongPress: () {
+                  if (onVerseAction != null) {
+                    onVerseAction(
+                      bookName,
+                      chapterNumber,
+                      verseNumber,
+                      verseText,
+                      verseNumKey,
+                    );
+                  } else {
+                    VerseHelper.handleVerseNumberClick(
+                      context,
+                      bookName,
+                      chapterNumber,
+                      verseNumber,
+                      verseText,
+                      onWordClick: onWordClick,
+                    );
+                  }
+                },
+                child: Text(
+                  '$verseNumber',
+                  style: baseStyle.copyWith(
+                    fontWeight: FontWeight.w400,
+                    height: 1,
+                    color: isDark ? Colors.grey[400] : Colors.grey[600],
+                    backgroundColor: highlightVerse && !isJumpTarget
+                        ? _verseTapHighlight
+                        : null,
                   ),
                 ),
               ),
             ),
-          );
-        } else {
-          final verseNumTapRecognizer = TapGestureRecognizer()
-            ..onTap = () {
-              if (enableMultiSelect) {
-                onVerseSelectToggle?.call(verseNumber, verseText);
-              } else {
-                VerseHelper.handleVerseNumberClick(
-                  context,
-                  bookName,
-                  chapterNumber,
-                  verseNumber,
-                  verseText,
-                  onWordClick: onWordClick,
-                );
-              }
-            };
-
-          children.add(
-            TextSpan(
-              text: '$verseNumber ',
-              style: baseStyle.copyWith(
-                fontWeight: FontWeight.w500,
-                color: isDark ? Colors.grey[400] : Colors.grey[600],
-                backgroundColor:
-                    highlightVerse ? Colors.blue.withAlpha(51) : null,
-              ),
-              recognizer: verseNumTapRecognizer,
-            ),
-          );
-        }
+          ),
+        );
+        children.add(const TextSpan(text: ' '));
 
         if (verseText.isNotEmpty) {
           void addVersePart(String part) {
@@ -1293,7 +1413,7 @@ class VerseHelper {
                     text: word,
                     style: baseStyle.copyWith(
                       backgroundColor:
-                          highlightVerse ? Colors.blue.withAlpha(51) : null,
+                          highlightVerse ? _verseTapHighlight : null,
                     ),
                   ),
                 );
@@ -1327,7 +1447,7 @@ class VerseHelper {
                       letterSpacing: 0.2,
                       wordSpacing: 1.5,
                       backgroundColor:
-                          highlightVerse ? Colors.blue.withAlpha(51) : null,
+                          highlightVerse ? _verseTapHighlight : null,
                     ),
                     recognizer: wordTapRecognizer,
                   ),
@@ -1473,7 +1593,7 @@ class VerseHelper {
                   text: word,
                   style: baseStyle.copyWith(
                     backgroundColor:
-                        highlightVerse ? Colors.blue.withAlpha(51) : null,
+                        highlightVerse ? _verseTapHighlight : null,
                   ),
                 ),
               );
@@ -1507,7 +1627,7 @@ class VerseHelper {
                     letterSpacing: 0.2,
                     wordSpacing: 1.5,
                     backgroundColor:
-                        highlightVerse ? Colors.blue.withAlpha(51) : null,
+                        highlightVerse ? _verseTapHighlight : null,
                   ),
                   recognizer: wordTapRecognizer,
                 ),
@@ -2023,6 +2143,7 @@ class ChapterTextScreen extends StatefulWidget {
   final int chapterNumber;
   final String text;
   final int? targetVerse;
+  final List<int>? initialSelectedVerses;
 
   const ChapterTextScreen({
     super.key,
@@ -2030,6 +2151,7 @@ class ChapterTextScreen extends StatefulWidget {
     required this.chapterNumber,
     required this.text,
     this.targetVerse,
+    this.initialSelectedVerses,
   });
 
   @override
@@ -2046,13 +2168,19 @@ class _ChapterTextScreenState extends State<ChapterTextScreen> {
   final ScrollController _scrollController = ScrollController(); // Ավելացրել եմ
   final Map<int, String> _selectedVerses = {};
   double _readerFontSize = _defaultReaderFontSize;
+  int? _targetRingVerse;
+  Timer? _targetRingTimer;
 
   @override
   void initState() {
     super.initState();
     _loadReaderFontSize();
+    _applyInitialVerseSelection();
+    if (widget.initialSelectedVerses == null) {
+      _targetRingVerse = widget.targetVerse;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _scrollToTargetVerse(); // Ավելացրել եմ
+      _scrollToTargetVerse();
     });
   }
 
@@ -2073,33 +2201,35 @@ class _ChapterTextScreenState extends State<ChapterTextScreen> {
   // Ավելացրել եմ այս մեթոդը
   void _scrollToTargetVerse() {
     if (widget.targetVerse == null) return;
-
-    Future.delayed(const Duration(milliseconds: 50), () {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        final key = _verseKeys[widget.targetVerse];
-        if (key == null) {
-          Future.delayed(const Duration(milliseconds: 100), () {
-            _scrollToTargetVerse();
-          });
-          return;
-        }
-
-        final ctx = key.currentContext;
-        if (ctx == null) {
-          Future.delayed(const Duration(milliseconds: 100), () {
-            _scrollToTargetVerse();
-          });
-          return;
-        }
-
-        Scrollable.ensureVisible(
-          ctx,
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeInOut,
-          alignment: 0.2,
-        );
-      });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      VerseHelper.scrollToVerse(
+        controller: _scrollController,
+        keyOf: () => _verseKeys[widget.targetVerse],
+        isMounted: () => mounted,
+        onDone: _startTargetRingTimeout,
+      );
     });
+  }
+
+  void _startTargetRingTimeout() {
+    if (_targetRingTimer != null || _targetRingVerse == null) return;
+    _targetRingTimer = Timer(const Duration(seconds: 3), () {
+      if (!mounted) return;
+      setState(() => _targetRingVerse = null);
+    });
+  }
+
+  void _applyInitialVerseSelection() {
+    final numbers = widget.initialSelectedVerses;
+    if (numbers == null || numbers.isEmpty) return;
+
+    final parsed = VerseHelper.parseVerses(widget.text);
+    for (final n in numbers) {
+      final verseText = parsed[n];
+      if (verseText != null && verseText.isNotEmpty) {
+        _selectedVerses[n] = verseText;
+      }
+    }
   }
 
   void _toggleVerseSelection(int verseNumber, String verseText) {
@@ -2517,6 +2647,7 @@ class _ChapterTextScreenState extends State<ChapterTextScreen> {
 
   @override
   void dispose() {
+    _targetRingTimer?.cancel();
     _hideActionPanel(fromDispose: true);
     _scrollController.dispose();
     super.dispose();
@@ -2532,22 +2663,26 @@ class _ChapterTextScreenState extends State<ChapterTextScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
-            // Делаем контейнер как остальные (пилюля, не квадрат)
             color: isDark
                 ? const Color.fromARGB(255, 19, 19, 19)
                 : Colors.grey[350],
             borderRadius: BorderRadius.circular(20),
           ),
-          child: Text(
-            '${widget.bookName}',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w500,
-              color: isDark
-                  ? const Color.fromARGB(255, 255, 255, 255)
-                  : const Color.fromARGB(255, 0, 0, 0),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              widget.bookName,
+              maxLines: 1,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+                color: isDark
+                    ? const Color.fromARGB(255, 255, 255, 255)
+                    : const Color.fromARGB(255, 0, 0, 0),
+              ),
             ),
           ),
         ),
@@ -2629,6 +2764,7 @@ class _ChapterTextScreenState extends State<ChapterTextScreen> {
                     readerFontSize: _readerFontSize,
                     selectedWordKey: _selectedWordKey,
                     verseKeys: _verseKeys,
+                    targetVerse: _targetRingVerse,
                     onWordClick: (
                       bookName,
                       chapterNumber,
@@ -3244,32 +3380,12 @@ class _ChapterTextScreenWithHighlightState
 
   void _scrollToTargetVerse() {
     if (widget.targetVerse == null) return;
-
-    Future.delayed(const Duration(milliseconds: 100), () {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        final key = _verseKeys[widget.targetVerse];
-        if (key == null) {
-          Future.delayed(const Duration(milliseconds: 300), () {
-            _scrollToTargetVerse();
-          });
-          return;
-        }
-
-        final ctx = key.currentContext;
-        if (ctx == null) {
-          Future.delayed(const Duration(milliseconds: 300), () {
-            _scrollToTargetVerse();
-          });
-          return;
-        }
-
-        Scrollable.ensureVisible(
-          ctx,
-          duration: const Duration(milliseconds: 500),
-          curve: Curves.easeInOut,
-          alignment: 0.3,
-        );
-      });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      VerseHelper.scrollToVerse(
+        controller: _scrollController,
+        keyOf: () => _verseKeys[widget.targetVerse],
+        isMounted: () => mounted,
+      );
     });
   }
 
@@ -3429,20 +3545,24 @@ class _ChapterTextScreenWithHighlightState
     return Scaffold(
       appBar: AppBar(
         title: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
-            // Делаем контейнер как остальные (пилюля, не квадрат)
             color: isDark
                 ? const Color.fromARGB(255, 19, 19, 19)
                 : Colors.grey[350],
             borderRadius: BorderRadius.circular(20),
           ),
-          child: Text(
-            '${widget.bookName} ${widget.chapterNumber}',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w500,
-              color: isDark ? Colors.white : const Color.fromARGB(255, 0, 0, 0),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              '${widget.bookName} ${widget.chapterNumber}',
+              maxLines: 1,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+                color: isDark ? Colors.white : const Color.fromARGB(255, 0, 0, 0),
+              ),
             ),
           ),
         ),
@@ -4179,7 +4299,7 @@ class _ChapterTextScreenWithHighlightState
               letterSpacing: 0.2,
               wordSpacing: 1.5,
               backgroundColor: (isVerseSelectedByKey || isVerseMultiSelected)
-                  ? Colors.blue.withAlpha(51)
+                  ? _verseTapHighlight
                   : null,
             ),
             recognizer: wordTapRecognizer,
