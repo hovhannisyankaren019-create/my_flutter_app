@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: ararat-bible-spiritual-ai
+    runtime: node
+    region: frankfurt
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
+      - key: SPIRITUAL_AI_GATE
+        value: ararat-bible-local-gate
+      - key: OPENAI_API_KEY
+        sync: false
