@@ -71,6 +71,12 @@ class SpiritualAiService {
       throw SpiritualAiException('Հարցումը մերժվեց սերվերի կողմից։');
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
+      final serverError = _serverError(response.body);
+      if (serverError == 'Server is not configured') {
+        throw SpiritualAiException(
+          'Սերվերում OpenAI բանալին դրված չէ։ Render-ում ավելացրեք OPENAI_API_KEY և նորից փորձեք։',
+        );
+      }
       throw SpiritualAiException(
         'Չհաջողվեց ստանալ պատասխան (${response.statusCode})։',
       );
@@ -85,5 +91,15 @@ class SpiritualAiService {
       throw SpiritualAiException('Պատասխանը դատարկ էր։');
     }
     return SpiritualAiReply(text: text, passages: passages);
+  }
+
+  String? _serverError(String body) {
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map) {
+        return decoded['error']?.toString();
+      }
+    } catch (_) {}
+    return null;
   }
 }

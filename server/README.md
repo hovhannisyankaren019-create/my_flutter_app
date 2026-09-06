@@ -20,4 +20,30 @@ OpenAI բանալին այստեղ է, ոչ թե հավելվածում։ Սեր
    `https://ararat-bible-spiritual-ai.onrender.com`
 7. Առաջին հարցը կարող է տևել մինչև 1 րոպե (անվճար պլանը քնում է)։
 
+## Telegram բոտ
+
+Սա նույն ԱԲ-ն է, ոչ առանձին մոդել։ «Սովորեցնել» նշանակում է `server/knowledge.txt` ֆայլում գրել ձեր հարց-պատասխանները, հետո նորից deploy անել։
+
+1. Telegram-ում բացեք [@BotFather](https://t.me/BotFather) → `/newbot` → վերցրեք token-ը։
+2. Render → Environment ավելացրեք.
+   - `TELEGRAM_BOT_TOKEN` = BotFather-ի token
+   - `PUBLIC_URL` = `https://ararat-bible-spiritual-ai.onrender.com`
+3. Save and deploy։
+4. Գրեք `server/knowledge.txt`-ում այն, ինչ պետք է պատասխանի, commit/deploy։
+5. Բոտին Telegram-ում `/start`։
+
+### Սովորեցնել Telegram-ից
+
+1. Երեք հոգի բոտին գրեք `/myid` և երեք թվերը դրեք Render-ում մեկ տողով.
+
+`TELEGRAM_ADMIN_IDS=111111111,222222222,333333333`
+
+Երեքն էլ կարող են reply-ով ուղղել պատասխանը։ Առաջին ուսուցիչը կարող է նաև գրել `/addteacher 123456789`։
+2. Որ դասերը չկորչեն սերվերի քնելուց, ավելացրեք `GITHUB_TOKEN` (GitHub Personal Access Token, `repo` contents գրելու իրավունքով)
+3. Բոտում հարցրեք, հետո **reply արեք բոտի պատասխանին** և գրեք ձեր ուզած տարբերակը։
+   Կամ՝ `/fix ուղղված պատասխանը`
+   `/lessons` — տեսնել սովորվածը
+
+Token-ը հավելվածում և GitHub-ում մի դրեք։
+
 Հավելվածում այս URL-ն արդեն դրված է որպես լռելյայն։ Հեռախոսին տեղադրեք **նոր** build։
