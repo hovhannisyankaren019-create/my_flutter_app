@@ -10,11 +10,14 @@ const SYSTEM_PROMPT = `Դու «Հոգևոր ԱԲ» ես՝ Ararat Bible-ի խո�
 Կանոններ.
 1. Պատասխանիր միայն հայերենով՝ հանգիստ, հարգալից և հոգևոր ձևով։
 2. Եթե կա «Սեփական նյութեր» բաժին, նախ հիմնվիր դրանց վրա և պատասխանիր այնպես, ինչպես այնտեղ է գրված։
-3. Համար առաջարկիր ՄԻԱՅՆ եթե «Տրված հատվածներ»-ում կա հատված, որն ուղղակիորեն նույն թեմային է, ինչ հարցը։ Պատահական համընկնող բառով համար մի նշիր։
-4. Երբեք մի հորինիր Աստվածաշնչյան համարներ։ Մեջբերիր միայն տրված հատվածներից։
-5. Եթե համապատասխան համար չկա, համարներ մի առաջարկիր. ասա, որ այս պատասխանում հաստատված համար չունես, և տուր կարճ հոգևոր խորհուրդ։
-6. Բժշկական, իրավական կամ արտակարգ իրավիճակներում խորհուրդ տուր դիմել մասնագետի։
-7. Մի երկարիր անտեղի։`;
+3. Եթե օգտատերը ուզում է համար կամ հատված (կամ ասում է ուղարկիր/տուր համարը), մեջբերիր ՄԻԱՅՆ տրված հատվածները՝ առանց մեկնաբանության, առանց «հավանաբար»։ Ձևը՝ տողում համարը, հաջորդ տողում տեքստը։
+4. Եթե հարցնում են՝ որտեղ է գրված մի նախադասություն, տուր ամենաճիշտ մեկ համարը տրված հատվածներից։ Մի ասա «հավանաբար» կամ «նկատի ունես»։
+5. Երբեք մի հորինիր Աստվածաշնչյան համարներ։ Մեջբերիր միայն տրված հատվածներից։
+6. Եթե համապատասխան համար չկա, համարներ մի առաջարկիր. ասա, որ այս պատասխանում հաստատված համար չունես։
+7. Բժշկական, իրավական կամ արտակարգ իրավիճակներում խորհուրդ տուր դիմել մասնագետի։
+8. Մի երկարիր անտեղի։
+9. Եթե օգտատերը խնդրում է նկար, քարտեզ, լուսանկար կամ վայրի տեղը ցույց տալ, երբեք մի ասա, որ չես կարող տրամադրել նկարներ կամ քարտեզներ։ Կարճ բացատրիր վայրը կամ տեսարանը հայերենով։ Նկարներն ու քարտեզները հավելվածը ցույց կտա առանձին։
+10. Պատմական, աշխարհագրական, քարտեզի և ժամանակաշրջանի հարցերին պատասխանիր ըստ տրված աղբյուրների։ Վերջում նշիր աղբյուրը և հղումը, եթե տրված է, որ մարդը կարող է ստուգել։ Թվեր մի հորինիր։`;
 
 const hits = new Map();
 const telegramHistory = new Map();
@@ -338,7 +341,7 @@ async function generateReply({message, history, passages}) {
     content:
       `Օգտատիրոջ հարցը:\n${message}\n\n` +
       (passageBlock
-        ? `Տրված հատվածներ (միայն սրանցից մեջբերիր, և միայն եթե հատվածը ուղղակիորեն համապատասխանում է հարցի թեմային):\n${passageBlock}`
+        ? `Տրված հատվածներ (մեջբերիր միայն սրանցից. եթե հարցը համար/հատված է, միայն մեջբերիր՝ առանց մեկնաբանության):\n${passageBlock}`
         : "Տրված հատվածներ չկան։ Կոնկրետ համարներ մի նշիր և համարներ մի առաջարկիր։"),
   });
 
@@ -366,6 +369,101 @@ async function generateReply({message, history, passages}) {
   const reply = data.choices?.[0]?.message?.content?.trim() || "";
   if (!reply) throw new Error("empty");
   return reply;
+}
+
+function imageScenePrompt(userPrompt) {
+  return (
+    "Respectful Christian biblical illustration, sacred art, peaceful lighting, " +
+    "no captions, no watermarks, no logos, no photorealistic faces of Christ if avoidable, " +
+    `suitable for a Bible app. Scene: ${userPrompt}`
+  );
+}
+
+async function generateImage(userPrompt) {
+  const geminiKey = process.env.GEMINI_API_KEY || "";
+  const provider = (process.env.IMAGE_PROVIDER || "").toLowerCase();
+  const useGemini = provider === "gemini" || (!provider && geminiKey);
+
+  if (useGemini) {
+    if (!geminiKey) throw new Error("image_not_configured");
+    const model = process.env.IMAGE_MODEL || "gemini-2.5-flash-image";
+    const geminiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+      {
+        method: "POST",
+        headers: {
+          "x-goog-api-key": geminiKey,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          contents: [{parts: [{text: imageScenePrompt(userPrompt)}]}],
+          generationConfig: {responseModalities: ["TEXT", "IMAGE"]},
+        }),
+      },
+    );
+    if (!geminiRes.ok) {
+      const errText = await geminiRes.text();
+      console.error("Gemini image error", geminiRes.status, errText.slice(0, 500));
+      throw new Error("upstream");
+    }
+    const data = await geminiRes.json();
+    const parts = data.candidates?.[0]?.content?.parts || [];
+    for (const part of parts) {
+      const inline = part.inlineData || part.inline_data;
+      if (inline?.data) {
+        return {
+          imageBase64: inline.data,
+          mimeType: inline.mimeType || inline.mime_type || "image/png",
+        };
+      }
+    }
+    throw new Error("empty");
+  }
+
+  const encoded = encodeURIComponent(imageScenePrompt(userPrompt));
+  const imageUrl =
+    `https://image.pollinations.ai/prompt/${encoded}` +
+    "?model=flux&width=768&height=768&nologo=true&safe=true";
+  return {imageUrl};
+}
+
+async function handleAppImage(req, res, body) {
+  const expectedGate = process.env.SPIRITUAL_AI_GATE || "";
+  if (expectedGate) {
+    const provided = String(req.headers["x-spiritual-ai-gate"] || "");
+    if (provided !== expectedGate) {
+      json(res, 401, {error: "Unauthorized"});
+      return;
+    }
+  }
+
+  const ip = clientIp(req);
+  if (rateLimited(ip, 8, 10 * 60 * 1000)) {
+    json(res, 429, {error: "Too many requests"});
+    return;
+  }
+
+  const prompt = asString(body.prompt || body.message, 800);
+  if (!prompt) {
+    json(res, 400, {error: "Missing prompt"});
+    return;
+  }
+
+  try {
+    const result = await generateImage(prompt);
+    json(res, 200, result);
+  } catch (error) {
+    if (error.message === "image_not_configured") {
+      json(res, 500, {error: "Image API is not configured"});
+      return;
+    }
+    if (error.message === "upstream" || error.message === "empty") {
+      json(res, 502, {error: "Upstream error"});
+      return;
+    }
+    console.error(error);
+    json(res, 500, {error: "Server error"});
+  }
 }
 
 function rememberTelegram(chatId, role, content) {
@@ -686,6 +784,11 @@ const server = http.createServer(async (req, res) => {
 
   if (pathname === "/telegram") {
     await handleTelegram(req, res, body);
+    return;
+  }
+
+  if (pathname === "/image") {
+    await handleAppImage(req, res, body);
     return;
   }
 
