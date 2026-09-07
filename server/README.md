@@ -20,6 +20,18 @@ OpenAI բանալին այստեղ է, ոչ թե հավելվածում։ Սեր
    `https://ararat-bible-spiritual-ai.onrender.com`
 7. Առաջին հարցը կարող է տևել մինչև 1 րոպե (անվճար պլանը քնում է)։
 
+## Նկարների գեներացիա
+
+Տեքստային ԱԲ-ն մնում է OpenAI-ով։ Նկարները գալիս են **ուրիշ API**-ից.
+
+- Լռելյայն՝ [Pollinations](https://pollinations.ai) (բանալի պետք չէ)։
+- Ավելի որակով՝ Google Gemini Image։ Render Environment-ում դրեք.
+  - `GEMINI_API_KEY` = Gemini բանալին ([aistudio.google.com](https://aistudio.google.com/apikey))
+  - `IMAGE_PROVIDER` = `gemini`
+  - `IMAGE_MODEL` = `gemini-2.5-flash-image`
+
+Հավելվածում գրեք նկարագրությունը և սեղմեք նկարի կոճակը։
+
 ## Telegram բոտ
 
 Սա նույն ԱԲ-ն է, ոչ առանձին մոդել։ «Սովորեցնել» նշանակում է `server/knowledge.txt` ֆայլում գրել ձեր հարց-պատասխանները, հետո նորից deploy անել։

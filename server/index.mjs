@@ -5,19 +5,27 @@ import {fileURLToPath} from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const SYSTEM_PROMPT = `Դու «Հոգևոր ԱԲ» ես՝ Ararat Bible-ի խորհրդատուն։
+const SYSTEM_PROMPT = `Դու «Հոգևոր ԱԲ» ես՝ Ararat Bible-ի իմաստուն հոգևոր խորհրդատուն։ Դու խորն ես ճանաչում Աստվածաշունչը, աղոթքը, մարդու սիրտը և առօրյա փորձությունները։ Պատասխանում ես միայն հայերենով՝ տաք, պարզ, խելացի և հոգևոր խորությամբ։
+
+Ով ես դու.
+- Եղիր ինչպես հոգևոր հայր ու ուսուցիչ. նախ հասկացիր հարցի խորքը, հետո պատասխանիր սուրբգրային հիմքով։
+- Մի եղիր մակերեսային, մի կրկնիր դատարկ կարգախոսներ, մի գրիր «հավատա ու ամեն ինչ լավ կլինի» առանց իմաստի։
+- Բացատրիր ինչ է նշանակում, ինչու է կարևոր, և ինչպես ապրել դա այսօր։ Աստվածաբանական հարցին՝ ճշգրիտ ու կարգավորված։ Ցավի, մեղքի, վախի, ընտանիքի հարցին՝ կարեկից, բայց ճշմարտախոս։
+- Եթե հարցը պարզ է թվում, միևնույն է տուր խելացի պատասխան, ոչ մեկ նախադասություն։
+- Պատասխանդ պետք է բնական հնչի բարձրաձայն կարդալիս. կենդանի նախադասություններ, առանց հղումների ցանկի մեջտեղում։
+- Խոսիր միայն հայերեն տառերով ու հայերեն բառերով։ Անգլերեն, ռուսերեն կամ լատինատառ բառեր մի գրիր (ոչ Jesus, OK, focus, energy, context, message, spiritual, Bible որպես անգլերեն)։ Գրիր Հիսուս, Աստվածաշունչ, աղոթք, հավատք, սեր, հոգի, սիրտ, կյանք։ Եթե անունը օտար է, գրիր հայերեն տառերով։
 
 Կանոններ.
-1. Պատասխանիր միայն հայերենով՝ հանգիստ, հարգալից և հոգևոր ձևով։
+1. Պատասխանիր միայն հայերենով՝ հանգիստ, հարգալից և հոգևոր ձևով։ Օտարալեզու տերմիններ մի խառնիր։
 2. Եթե կա «Սեփական նյութեր» բաժին, նախ հիմնվիր դրանց վրա և պատասխանիր այնպես, ինչպես այնտեղ է գրված։
-3. Եթե օգտատերը ուզում է համարներ/հատվածներ (օրինակ՝ «համարներ տուր սիրո մասին»), տուր ՄԻԱՅՆ տրված հատվածները՝ համար և տեքստ, առանց փիլիսոփայության, առանց մեկնաբանության, առանց «հավանաբար»։
-4. Եթե հարցնում են՝ որտեղ է գրված մի նախադասություն, տուր ամենաճիշտ մեկ համարը տրված հատվածներից։ Մի ասա «հավանաբար» կամ «նկատի ունես»։
+3. Եթե օգտատերը ուզում է համարներ/հատվածներ և տրված են հատվածներ, տուր ՄԻԱՅՆ այդ հատվածները՝ համար և տեքստ, առանց փիլիսոփայության, առանց մեկնաբանության, առանց «հավանաբար»։
+4. Եթե հարցնում են՝ որտեղ է գրված մի նախադասություն, և տրված են հատվածներ, տուր ամենաճիշտ մեկ համարը տրվածներից։ Մի ասա «հավանաբար» կամ «նկատի ունես»։
 5. Երբեք մի հորինիր Աստվածաշնչյան համարներ։ Մեջբերիր միայն տրված հատվածներից։
-6. Եթե համապատասխան համար չկա, համարներ մի առաջարկիր. ասա, որ այս պատասխանում հաստատված համար չունես։
-7. Բժշկական, իրավական կամ արտակարգ իրավիճակներում խորհուրդ տուր դիմել մասնագետի։
-8. Մի երկարիր անտեղի։
+6. Եթե համապատասխան համար չկա կամ տրված հատվածներ չկան, համարներ մի առաջարկիր, բայց հարցին միևնույն է պատասխանիր խորությամբ։ Կարող ես կարճ նշել, որ կոնկրետ համար չգտնվեց, հետո տուր հոգևոր ու խելացի պատասխան։ Մի կանգնիր միայն «համար չունեմ»-ի վրա։
+7. Բժշկական, իրավական կամ արտակարգ իրավիճակներում խորհուրդ տուր դիմել մասնագետի, բայց կարող ես նաև հոգևոր մխիթարություն տալ։
+8. Մի գրիր ավելորդ ջուր, բայց մի էլ կարճացրու այնքան, որ դատարկ մնա։ Սովորական հարցին՝ մի քանի պարբերություն. խոր հարցին՝ ավելի լիքը։
 9. Երբեք մի գրիր, որ չես կարող գեներացնել, ուղարկել, տալ կամ ցույց տալ նկարներ կամ քարտեզներ։ Հավելվածն ինքն է ուղարկում նկարը։ Դու միայն կարճ նկարագրիր տեսարանը հայերենով։
-10. Պատմական, աշխարհագրական, քարտեզի և ժամանակաշրջանի հարցերին պատասխանիր ըստ տրված աղբյուրների։ Վերջում նշիր աղբյուրը և հղումը, եթե տրված է, որ մարդը կարող է ստուգել։ Թվեր մի հորինիր։
+10. Պատմական, աշխարհագրական, քարտեզի և ժամանակաշրջանի հարցերին պատասխանիր ըստ տրված աղբյուրների։ Վերջում նշիր աղբյուրը և հղումը, եթե տրված է։ Թվեր մի հորինիր։
 11. Եթե տրված է նախորդ երկխոսությունը, և նոր գրածը նշված է որպես պատասխան/շարունակություն, դա նոր թեմա չէ. կապիր քո նախորդ պատասխանին։ Մի սկսիր կարծես առաջին հարցն է։ Եթե նշված է որպես նոր հարց, այն ժամանակ նոր թեմայով պատասխանիր։`;
 
 const hits = new Map();
@@ -277,7 +285,7 @@ function readBody(req) {
     const chunks = [];
     req.on("data", (chunk) => {
       chunks.push(chunk);
-      if (chunks.reduce((n, c) => n + c.length, 0) > 200_000) {
+      if (chunks.reduce((n, c) => n + c.length, 0) > 3_000_000) {
         reject(new Error("Body too large"));
       }
     });
@@ -345,7 +353,7 @@ async function generateReply({message, history, passages, followUp = false}) {
         : `Օգտատիրոջ նոր հարցը:\n${message}\n\n`) +
       (passageBlock
         ? `Տրված հատվածներ (մեջբերիր միայն սրանցից. եթե հարցը համար/հատված է, միայն մեջբերիր՝ առանց մեկնաբանության):\n${passageBlock}`
-        : "Տրված հատվածներ չկան։ Կոնկրետ համարներ մի նշիր և համարներ մի առաջարկիր, եթե օգտատերը չի խնդրել համար։"),
+        : "Տրված հատվածներ չկան։ Կոնկրետ համարներ մի նշիր և համարներ մի հորինիր։ Եթե օգտատերը համար է ուզել, բայց հատված չկա, միևնույն է պատասխանիր հարցին մաքուր հայերենով, առանց օտար բառերի։"),
   });
 
   const openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -356,8 +364,8 @@ async function generateReply({message, history, passages, followUp = false}) {
     },
     body: JSON.stringify({
       model: process.env.OPENAI_MODEL || "gpt-4o-mini",
-      temperature: 0.35,
-      max_tokens: 800,
+      temperature: 0.55,
+      max_tokens: 1200,
       messages,
     }),
   });
@@ -372,6 +380,83 @@ async function generateReply({message, history, passages, followUp = false}) {
   const reply = data.choices?.[0]?.message?.content?.trim() || "";
   if (!reply) throw new Error("empty");
   return reply;
+}
+
+async function transcribeArmenian(audioB64, mime) {
+  const openaiKey = process.env.OPENAI_API_KEY || "";
+  if (!openaiKey) throw new Error("not_configured");
+  const bin = Buffer.from(String(audioB64 || ""), "base64");
+  if (bin.length < 80) throw new Error("empty");
+  const type = String(mime || "audio/mp4");
+  const ext = type.includes("wav")
+    ? "wav"
+    : type.includes("mpeg") || type.includes("mp3")
+      ? "mp3"
+      : "m4a";
+  const form = new FormData();
+  form.append("file", new Blob([bin], {type}), `speech.${ext}`);
+  form.append("model", "whisper-1");
+  form.append("language", "hy");
+  form.append("response_format", "json");
+  form.append(
+    "prompt",
+    "Սա հայերեն հոգևոր հարց է. Հիսուս Քրիստոս, Աստվածաշունչ, աղոթք, համար, Ավետարան, հավատք։",
+  );
+  const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+    method: "POST",
+    headers: {Authorization: `Bearer ${openaiKey}`},
+    body: form,
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    console.error("Whisper error", res.status, err.slice(0, 300));
+    throw new Error("upstream");
+  }
+  const data = await res.json();
+  const text = String(data.text || "").trim();
+  if (!text) throw new Error("empty");
+  return text;
+}
+
+async function speakArmenian(text) {
+  const openaiKey = process.env.OPENAI_API_KEY || "";
+  if (!openaiKey) throw new Error("not_configured");
+  const input = String(text || "").trim().slice(0, 4000);
+  if (!input) throw new Error("empty");
+
+  async function once(model, extra = {}) {
+    const res = await fetch("https://api.openai.com/v1/audio/speech", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${openaiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        voice: "nova",
+        input,
+        response_format: "mp3",
+        ...extra,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      console.error("TTS error", model, res.status, err.slice(0, 300));
+      return null;
+    }
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length < 80) return null;
+    return buf.toString("base64");
+  }
+
+  const neural = await once("gpt-4o-mini-tts", {
+    instructions:
+      "Speak only Eastern Armenian, native and clear. Warm pastoral voice. Do not speak English or Russian.",
+  });
+  if (neural) return neural;
+  const basic = await once("tts-1");
+  if (!basic) throw new Error("upstream");
+  return basic;
 }
 
 function imageScenePrompt(userPrompt) {
@@ -697,6 +782,42 @@ async function handleTelegram(req, res, body) {
   }
 }
 
+async function handleAppVoice(req, res, body, kind) {
+  const expectedGate = process.env.SPIRITUAL_AI_GATE || "";
+  if (expectedGate) {
+    const provided = String(req.headers["x-spiritual-ai-gate"] || "");
+    if (provided !== expectedGate) {
+      json(res, 401, {error: "Unauthorized"});
+      return;
+    }
+  }
+  const ip = clientIp(req);
+  if (rateLimited(ip, 12)) {
+    json(res, 429, {error: "Too many requests"});
+    return;
+  }
+  try {
+    if (kind === "transcribe") {
+      const text = await transcribeArmenian(body.audio, body.mime);
+      json(res, 200, {text});
+      return;
+    }
+    const audio = await speakArmenian(asString(body.text, 4000));
+    json(res, 200, {audio, mimeType: "audio/mpeg"});
+  } catch (error) {
+    if (error.message === "not_configured") {
+      json(res, 500, {error: "Server is not configured"});
+      return;
+    }
+    if (error.message === "upstream" || error.message === "empty") {
+      json(res, 502, {error: "Upstream error"});
+      return;
+    }
+    console.error(error);
+    json(res, 500, {error: "Server error"});
+  }
+}
+
 async function handleAppChat(req, res, body) {
   const expectedGate = process.env.SPIRITUAL_AI_GATE || "";
   if (expectedGate) {
@@ -793,6 +914,16 @@ const server = http.createServer(async (req, res) => {
 
   if (pathname === "/image") {
     await handleAppImage(req, res, body);
+    return;
+  }
+
+  if (pathname === "/transcribe") {
+    await handleAppVoice(req, res, body, "transcribe");
+    return;
+  }
+
+  if (pathname === "/speak") {
+    await handleAppVoice(req, res, body, "speak");
     return;
   }
 

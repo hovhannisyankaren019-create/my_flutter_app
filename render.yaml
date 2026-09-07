@@ -16,3 +16,9 @@ services:
         value: ararat-bible-local-gate
       - key: OPENAI_API_KEY
         sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: IMAGE_PROVIDER
+        value: pollinations
+      - key: IMAGE_MODEL
+        value: gemini-2.5-flash-image

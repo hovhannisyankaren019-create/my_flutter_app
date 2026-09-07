@@ -1,0 +1,10 @@
+name = "ararat-bible-spiritual-image"
+main = "src/index.js"
+compatibility_date = "2025-09-01"
+
+[ai]
+binding = "AI"
+
+# Optional Google Programmable Search (for maps, history, chronology):
+# npx wrangler secret put GOOGLE_CSE_KEY
+# npx wrangler secret put GOOGLE_CSE_CX

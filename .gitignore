@@ -50,3 +50,8 @@ upload-keystore.jks
 server/.env
 server/.env.*
 !server/.env.example
+
+# Cloudflare Workers
+.wrangler/
+workers/**/node_modules/
+.dev.vars

@@ -10,4 +10,19 @@ class SpiritualAiConfig {
   );
 
   static bool get isConfigured => endpoint.trim().isNotEmpty;
+
+  static String get imageEndpoint {
+    final base = endpoint.replaceFirst(RegExp(r'/$'), '');
+    return '$base/image';
+  }
+
+  static String get transcribeEndpoint {
+    final base = endpoint.replaceFirst(RegExp(r'/$'), '');
+    return '$base/transcribe';
+  }
+
+  static String get speakEndpoint {
+    final base = endpoint.replaceFirst(RegExp(r'/$'), '');
+    return '$base/speak';
+  }
 }

@@ -1,7 +1,14 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_tts/flutter_tts.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
 
 import '../main.dart';
+import '../spiritual_image/spiritual_image_service.dart';
+import 'armenian_tts.dart';
 import 'bible_context.dart';
 import 'spiritual_ai_config.dart';
 import 'spiritual_ai_service.dart';
@@ -17,11 +24,15 @@ class _ChatItem {
   final String role;
   final String text;
   final List<BiblePassage> passages;
+  final Uint8List? imageBytes;
+  final List<String> imageUrls;
 
   const _ChatItem({
     required this.role,
     required this.text,
     this.passages = const [],
+    this.imageBytes,
+    this.imageUrls = const [],
   });
 }
 
@@ -29,9 +40,20 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
   final _service = SpiritualAiService();
+  final _imageService = SpiritualImageService();
+  final _recorder = AudioRecorder();
+  final _tts = FlutterTts();
+  late final ArmenianTts _armenianTts = ArmenianTts(
+    _tts,
+    fetchServerAudio: _service.speakArmenian,
+  );
   final _messages = <_ChatItem>[];
   bool _sending = false;
   bool _indexReady = false;
+  bool _listening = false;
+  bool _transcribing = false;
+  bool _speaking = false;
+  _ChatItem? _speakingItem;
 
   @override
   void initState() {
@@ -44,6 +66,8 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
 
   @override
   void dispose() {
+    _recorder.dispose();
+    _armenianTts.dispose();
     _controller.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -54,31 +78,171 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
     final text = (preset ?? _controller.text).trim();
     if (text.isEmpty) return;
 
+    await _recorder.stop();
+    await _armenianTts.stop();
     setState(() {
+      _listening = false;
+      _speaking = false;
+      _speakingItem = null;
       _sending = true;
       _messages.add(_ChatItem(role: 'user', text: text));
       _controller.clear();
     });
     _scrollToEnd();
 
-    final previous = _messages.sublist(0, _messages.length - 1);
-    final start = previous.length > 8 ? previous.length - 8 : 0;
-    final history = [
-      for (final item in previous.sublist(start))
-        {'role': item.role, 'content': item.text},
-    ];
-
     try {
-      final reply = await _service.ask(message: text, history: history);
+      final retriever = BibleContextRetriever.instance;
+      retriever.ensureReady();
+      final previous = _messages.sublist(0, _messages.length - 1);
+      final followUp = retriever.looksLikeFollowUp(
+        text,
+        hasPriorTurn: previous.any((item) => item.role == 'assistant'),
+      );
+      final searchQuery = followUp ? _searchContext(text, previous) : text;
+      final history = _apiHistory(previous);
+      final treatAsVerseQuote = !retriever.wantsCommentary(text) &&
+          !_isImageRequest(text) &&
+          (retriever.quoteExplicitReferences(text).matched ||
+              (!followUp && retriever.wantsVerseOnly(text)) ||
+              (followUp && retriever.wantsMoreVerses(text)));
+      final wantsLookupImage = !treatAsVerseQuote &&
+          (_isImageRequest(text) || _isHistoricalImageRequest(text));
+      if (wantsLookupImage) {
+        final prompt = _imageSearchPrompt(text, previous);
+        final askMessage =
+            '$text\n\n(Համակարգ. նկարն ու քարտեզը հավելվածը կցուցադրի. դու միայն կարճ բացատրիր վայրը հայերենով և երբեք մի ասա, որ չես կարող նկար կամ քարտեզ տալ։)';
+        List<SpiritualFoundImage> found = const [];
+        var factsText = '';
+        var sources = const <SpiritualFoundImage>[];
+        Object? findError;
+        SpiritualAiReply? reply;
+        try {
+          final lookup = await _imageService.findHistorical(
+            prompt: prompt,
+            exclude: _seenImageUrls(previous),
+          );
+          found = lookup.images.where((item) {
+            final key = _imageKey(item.url);
+            return !_seenImageUrls(previous)
+                .map(_imageKey)
+                .contains(key);
+          }).toList();
+          factsText = lookup.factsText;
+          sources = lookup.sources;
+        } catch (e) {
+          findError = e;
+        }
+        final groundedAsk = factsText.isEmpty
+            ? askMessage
+            : '$askMessage\n\nԱղբյուրներ (պատմություն, քարտեզ, ժամանակաշրջան — պատասխանիր սրանցով, թվեր մի հորինիր).\n$factsText';
+        try {
+          reply = await _service.ask(
+            message: groundedAsk,
+            history: history,
+            followUp: followUp,
+            searchQuery: searchQuery,
+          );
+        } catch (_) {}
+        if (!mounted) return;
+        final replyText = _withoutRefusal(reply?.text ?? '');
+        final caption = StringBuffer();
+        if (replyText.isNotEmpty) {
+          caption.writeln(replyText);
+        }
+        if (sources.isNotEmpty) {
+          if (caption.isNotEmpty) caption.writeln();
+          caption.writeln('Աղբյուրներ');
+          for (final source in sources.take(4)) {
+            final name = source.source.isNotEmpty ? source.source : source.title;
+            caption.writeln('• $name: ${source.url}');
+          }
+        } else if (found.isNotEmpty) {
+          if (caption.isNotEmpty) caption.writeln();
+          caption.write(
+            'Նկարներն ու քարտեզները վերցված են Google-ից և հանրային հավաստի աղբյուրներից, ոչ գեներացված են։',
+          );
+        }
+        if (found.isEmpty && caption.isEmpty) {
+          throw findError ??
+              SpiritualImageException(
+                'Համապատասխան նկար չգտնվեց հավաստի աղբյուրներում։ Գրեք ավելի կոնկրետ՝ վայր, տեսարան կամ քարտեզ։',
+              );
+        }
+        setState(() {
+          _messages.add(
+            _ChatItem(
+              role: 'assistant',
+              text: caption.toString().trim(),
+              passages: reply?.passages ?? const [],
+              imageUrls: [for (final item in found.take(3)) item.url],
+            ),
+          );
+        });
+      } else {
+        final reply = await _service.ask(
+          message: text,
+          history: history,
+          followUp: followUp,
+          searchQuery: searchQuery,
+        );
+        if (!mounted) return;
+        final refusedImage = _looksLikeRefusal(reply.text) &&
+            (reply.text.toLowerCase().contains('նկար') ||
+                reply.text.toLowerCase().contains('գեներաց') ||
+                reply.text.toLowerCase().contains('image') ||
+                _isImageRequest(text));
+        if (refusedImage) {
+          final prompt = _imageSearchPrompt(text, previous);
+          if (prompt.trim().isNotEmpty) {
+            final lookup = await _imageService.findHistorical(
+              prompt: prompt,
+              exclude: _seenImageUrls(previous),
+            );
+            if (!mounted) return;
+            final seenKeys = _seenImageUrls(previous).map(_imageKey).toSet();
+            final urls = [
+              for (final item in lookup.images)
+                if (!seenKeys.contains(_imageKey(item.url))) item.url,
+            ].take(3).toList();
+            final caption = StringBuffer();
+            if (lookup.sources.isNotEmpty) {
+              caption.writeln('Աղբյուրներ');
+              for (final source in lookup.sources.take(4)) {
+                final name =
+                    source.source.isNotEmpty ? source.source : source.title;
+                caption.writeln('• $name: ${source.url}');
+              }
+            } else if (lookup.images.isNotEmpty) {
+              caption.write(
+                'Նկարները վերցված են Google-ից և հանրային հավաստի աղբյուրներից, ոչ գեներացված են։',
+              );
+            }
+            setState(() {
+              _messages.add(
+                _ChatItem(
+                  role: 'assistant',
+                  text: caption.toString().trim(),
+                  imageUrls: urls,
+                ),
+              );
+            });
+            return;
+          }
+        }
+        setState(() {
+          _messages.add(
+            _ChatItem(
+              role: 'assistant',
+              text: reply.text,
+              passages: reply.passages,
+            ),
+          );
+        });
+      }
+    } on SpiritualImageException catch (e) {
       if (!mounted) return;
       setState(() {
-        _messages.add(
-          _ChatItem(
-            role: 'assistant',
-            text: reply.text,
-            passages: reply.passages,
-          ),
-        );
+        _messages.add(_ChatItem(role: 'assistant', text: e.message));
       });
     } on SpiritualAiException catch (e) {
       if (!mounted) return;
@@ -99,6 +263,381 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
       if (mounted) {
         setState(() => _sending = false);
         _scrollToEnd();
+      }
+    }
+  }
+
+  List<Map<String, String>> _apiHistory(List<_ChatItem> previous) {
+    final turns = <Map<String, String>>[
+      for (final item in previous)
+        if (item.text.trim().isNotEmpty)
+          {
+            'role': item.role,
+            'content': item.text.trim().length > 1200
+                ? item.text.trim().substring(0, 1200)
+                : item.text.trim(),
+          },
+    ];
+    final start = turns.length > 12 ? turns.length - 12 : 0;
+    return turns.sublist(start);
+  }
+
+  String _searchContext(String text, List<_ChatItem> previous) {
+    String lastOf(String role) {
+      for (final item in previous.reversed) {
+        if (item.role == role && item.text.trim().isNotEmpty) {
+          final t = item.text.trim();
+          return t.length > 400 ? t.substring(0, 400) : t;
+        }
+      }
+      return '';
+    }
+
+    return [lastOf('user'), lastOf('assistant'), text]
+        .where((part) => part.isNotEmpty)
+        .join('\n');
+  }
+
+  bool _isHistoricalImageRequest(String text) {
+    final t = text.toLowerCase().trim();
+    const phrases = [
+      'քարտեզ',
+      'քարտէզ',
+      'map',
+      'հնագիտական',
+      'հնավայր',
+      'լուսանկար',
+      'իրական նկար',
+      'պատմական նկար',
+      'պատմական քարտեզ',
+      'գտիր նկար',
+      'գտիր քարտեզ',
+      'տրամադրել քարտեզ',
+      'տուր քարտեզ',
+      'կարող ես քարտեզ',
+      'archaeolog',
+      'historical map',
+      'where was',
+      'պատմական',
+      'պատմություն',
+      'ժամանակաշրջան',
+      'թվական',
+      'մ.թ.ա',
+      'մ.թ.',
+      'երբ էր',
+      'երբ է եղել',
+      'որ դարում',
+      'chronolog',
+    ];
+    for (final phrase in phrases) {
+      if (t.contains(phrase)) return true;
+    }
+    return _hasBiblicalPlace(t) &&
+        (t.contains('որտեղ') ||
+            t.contains('տեղը') ||
+            t.contains('վայր') ||
+            t.contains('երբ') ||
+            t.contains('պատմ'));
+  }
+
+  bool _hasBiblicalPlace(String t) {
+    const places = [
+      'երիքով',
+      'երուսաղեմ',
+      'բեթղեհեմ',
+      'գալիլեա',
+      'նազարեթ',
+      'կափառնաում',
+      'հորդանան',
+      'սինա',
+      'եդեմ',
+      'գողգոթա',
+      'հեբրոն',
+      'բաբելոն',
+      'սուրբ երկիր',
+      'jericho',
+      'jerusalem',
+      'bethlehem',
+      'galilee',
+      'nazareth',
+    ];
+    return places.any(t.contains);
+  }
+
+  bool _looksLikeRefusal(String text) {
+    final t = text.toLowerCase();
+    const phrases = [
+      'չեմ կարող',
+      'չկարողանամ',
+      'չեմ տրամադր',
+      'չեմ կարողանում',
+      'չեմ գեներաց',
+      'չեմ ուղարկ',
+      'cannot provide',
+      "can't provide",
+      'unable to provide',
+      'cannot generate',
+      "can't generate",
+      'cannot send',
+      'նկարներ կամ քարտեզներ',
+    ];
+    return phrases.any(t.contains);
+  }
+
+  String _withoutRefusal(String text) {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty || _looksLikeRefusal(trimmed)) return '';
+    return trimmed;
+  }
+
+  bool _isImageRequest(String text) {
+    final t = text.toLowerCase().trim();
+    if (t.contains('պատկերաց')) return false;
+    if (t.contains('նկարագր') &&
+        !t.contains('նկարով') &&
+        !t.contains('նկարիր') &&
+        !t.contains('նկարը') &&
+        !t.contains('նկարներ')) {
+      return false;
+    }
+    const phrases = [
+      'նկարով պատկեր',
+      'նկարով ցույց',
+      'նկարով տուր',
+      'պատկերիր',
+      'պատկերի',
+      'պատկերով',
+      'նկարիր',
+      'նկարել',
+      'նկարը տուր',
+      'նկար տուր',
+      'նկարներ',
+      'նկար ուղարկ',
+      'ուղարկիր նկար',
+      'ուղարկել նկար',
+      'կարող ես նկար',
+      'նկար ստեղծ',
+      'նկար գեներաց',
+      'գեներացրու',
+      'գեներացնել',
+      'մի նկար',
+      'որպես նկար',
+      'նկարի տեսք',
+      'show as image',
+      'show a picture',
+      'draw this',
+      'generate image',
+      'make an image',
+      'send an image',
+      'send a picture',
+    ];
+    for (final phrase in phrases) {
+      if (t.contains(phrase)) return true;
+    }
+    if (t.contains('նկար')) return true;
+    return RegExp(r'(^|[^ա-ֆԱ-Ֆ])նկար([^ա-ֆԱ-Ֆ]|$)').hasMatch(t);
+  }
+
+  List<String> _seenImageUrls(List<_ChatItem> messages) {
+    return [
+      for (final item in messages)
+        for (final url in item.imageUrls)
+          if (url.isNotEmpty) url,
+    ];
+  }
+
+  String _imageKey(String url) {
+    final uri = Uri.tryParse(url);
+    if (uri == null || uri.host.isEmpty) {
+      return url.split('?').first.toLowerCase();
+    }
+    return '${uri.host}${uri.path}'.toLowerCase();
+  }
+
+  String _stripImageVerbs(String request) {
+    var extra = request;
+    const strips = [
+      'նկարով պատկերիր',
+      'նկարով պատկերի',
+      'նկարով ցույց տուր',
+      'նկարով տուր',
+      'պատկերիր',
+      'պատկերի',
+      'նկարիր',
+      'նկար գեներացրու',
+      'գեներացրու նկար',
+      'նկար ստեղծիր',
+      'նկարը տուր',
+      'նկար տուր',
+      'էլի նկարներ',
+      'էլի նկար',
+      'ուրիշ նկարներ',
+      'ուրիշ նկար',
+      'այլ նկարներ',
+      'այլ նկար',
+      'նոր նկարներ',
+      'նոր նկար',
+      'կրկին նկար',
+      'show as image',
+      'show a picture',
+      'generate image',
+      'draw this',
+      'make an image',
+      'another picture',
+      'more pictures',
+      'more images',
+    ];
+    for (final phrase in strips) {
+      extra = extra.replaceAll(
+        RegExp(RegExp.escape(phrase), caseSensitive: false),
+        ' ',
+      );
+    }
+    extra = extra.replaceAll(
+      RegExp(r'(^|[^\p{L}])նկար(ներ)?([^\p{L}]|$)', unicode: true),
+      r'$1$3',
+    );
+    extra = extra.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return extra;
+  }
+
+  bool _isThinImageTopic(String text) {
+    final t = text.toLowerCase().trim();
+    if (t.length < 3) return true;
+    const thin = {
+      'էլի',
+      'ուրիշ',
+      'այլ',
+      'նորից',
+      'կրկին',
+      'please',
+      'more',
+      'again',
+      'another',
+    };
+    return thin.contains(t);
+  }
+
+  String _imageSearchPrompt(String request, List<_ChatItem> previous) {
+    final current = _stripImageVerbs(request);
+    if (current.isNotEmpty && !_isThinImageTopic(current)) {
+      return current.length > 280 ? current.substring(0, 280) : current;
+    }
+    for (final item in previous.reversed) {
+      if (item.role != 'user') continue;
+      final snippet = _stripImageVerbs(item.text);
+      if (snippet.isEmpty || _isThinImageTopic(snippet)) continue;
+      return snippet.length > 280 ? snippet.substring(0, 280) : snippet;
+    }
+    if (current.isNotEmpty) return current;
+    return request;
+  }
+
+  String _speechText(String text) {
+    var cleaned = text.replaceAll(RegExp(r'https?://\S+'), ' ');
+    final sourcesAt = cleaned.indexOf('Աղբյուրներ');
+    if (sourcesAt > 0) cleaned = cleaned.substring(0, sourcesAt);
+    return cleaned.replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+
+  Future<void> _toggleListen() async {
+    if (_sending || _transcribing) return;
+    if (_listening) {
+      final path = await _recorder.stop();
+      if (!mounted) return;
+      setState(() => _listening = false);
+      if (path == null || path.isEmpty) return;
+      setState(() => _transcribing = true);
+      try {
+        final bytes = await File(path).readAsBytes();
+        final spoken = await _service.transcribeArmenian(
+          bytes: bytes,
+          mime: 'audio/mp4',
+        );
+        if (!mounted) return;
+        setState(() => _transcribing = false);
+        final text = spoken.trim();
+        if (text.isEmpty) return;
+        _controller.text = text;
+        await _send(text);
+      } catch (e) {
+        if (!mounted) return;
+        setState(() => _transcribing = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              e is SpiritualAiException
+                  ? e.message
+                  : 'Ձայնը չհաջողվեց հայերեն ճանաչել։ Ասեք նորից։',
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
+    await _armenianTts.stop();
+    final allowed = await _recorder.hasPermission();
+    if (!allowed) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Միկրոֆոնի թույլտվություն է պետք հայերեն հարց ասելու համար։',
+          ),
+        ),
+      );
+      return;
+    }
+    final dir = await getTemporaryDirectory();
+    final path = '${dir.path}/spiritual_ask.m4a';
+    await _recorder.start(
+      const RecordConfig(
+        encoder: AudioEncoder.aacLc,
+        numChannels: 1,
+        bitRate: 128000,
+      ),
+      path: path,
+    );
+    if (!mounted) return;
+    setState(() {
+      _speaking = false;
+      _speakingItem = null;
+      _listening = true;
+    });
+  }
+
+  Future<void> _speak(_ChatItem item) async {
+    final spoken = _speechText(item.text);
+    if (spoken.isEmpty) return;
+    if (_speaking && identical(_speakingItem, item)) {
+      await _armenianTts.stop();
+      if (mounted) {
+        setState(() {
+          _speaking = false;
+          _speakingItem = null;
+        });
+      }
+      return;
+    }
+    if (_listening) {
+      await _recorder.stop();
+    }
+    if (mounted) {
+      setState(() {
+        _listening = false;
+        _speaking = true;
+        _speakingItem = item;
+      });
+    }
+    try {
+      await _armenianTts.speak(spoken);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _speaking = false;
+          _speakingItem = null;
+        });
       }
     }
   }
@@ -152,6 +691,10 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
                     mineColor: bubbleMine,
                     aiColor: bubbleAi,
                     isDark: isDark,
+                    speaking: identical(_speakingItem, item),
+                    onSpeak: item.role == 'assistant' && item.text.isNotEmpty
+                        ? () => _speak(item)
+                        : null,
                   ),
                 if (_sending)
                   Padding(
@@ -195,9 +738,13 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
                         fontSize: 16,
                       ),
                       decoration: InputDecoration(
-                        hintText: _indexReady
-                            ? 'Գրեք ձեր հարցը...'
-                            : 'Բեռնվում է Աստվածաշնչի տեքստը...',
+                        hintText: !_indexReady
+                            ? 'Բեռնվում է Աստվածաշնչի տեքստը...'
+                            : (_transcribing
+                                ? 'Հայերենը ճանաչվում է...'
+                                : (_listening
+                                    ? 'Լսում եմ հայերեն...'
+                                    : 'Գրեք կամ ասեք հայերեն...')),
                         hintStyle: TextStyle(
                           color: Colors.grey[600],
                           fontSize: 16,
@@ -215,7 +762,17 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 4),
+                  IconButton(
+                    tooltip: _listening ? 'Կանգնեցնել' : 'Ասել հարցը',
+                    onPressed: _indexReady && !_sending && !_transcribing
+                        ? _toggleListen
+                        : null,
+                    icon: Icon(
+                      _listening ? Icons.stop_circle : Icons.mic,
+                      color: _listening ? Colors.red : Colors.grey[800],
+                    ),
+                  ),
                   IconButton.filled(
                     onPressed: _indexReady && !_sending ? () => _send() : null,
                     icon: const Icon(Icons.send),
@@ -239,12 +796,16 @@ class _MessageBubble extends StatelessWidget {
   final Color mineColor;
   final Color aiColor;
   final bool isDark;
+  final bool speaking;
+  final VoidCallback? onSpeak;
 
   const _MessageBubble({
     required this.item,
     required this.mineColor,
     required this.aiColor,
     required this.isDark,
+    this.speaking = false,
+    this.onSpeak,
   });
 
   @override
@@ -266,15 +827,66 @@ class _MessageBubble extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SelectableText(
-                item.text,
-                style: TextStyle(
-                  fontSize: 16,
-                  color: isUser
-                      ? Colors.white
-                      : (isDark ? Colors.white : Colors.black),
+              if (item.imageBytes != null) ...[
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.memory(
+                    item.imageBytes!,
+                    fit: BoxFit.cover,
+                  ),
                 ),
-              ),
+                if (item.text.isNotEmpty || item.imageUrls.isNotEmpty)
+                  const SizedBox(height: 8),
+              ],
+              for (var i = 0; i < item.imageUrls.length; i++) ...[
+                if (i > 0) const SizedBox(height: 10),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: AspectRatio(
+                    aspectRatio: i == 0 ? 4 / 3 : 16 / 10,
+                    child: Image.network(
+                      item.imageUrls[i],
+                      fit: BoxFit.cover,
+                      alignment: Alignment.center,
+                      filterQuality: FilterQuality.high,
+                      headers: const {
+                        'User-Agent':
+                            'AraratBible/1.0 (biblical education; image display)',
+                        'Accept': 'image/jpeg,image/png,image/webp,*/*',
+                      },
+                      loadingBuilder: (context, child, progress) {
+                        if (progress == null) return child;
+                        return ColoredBox(
+                          color: Colors.black12,
+                          child: const Center(
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        );
+                      },
+                      errorBuilder: (_, __, ___) => const ColoredBox(
+                        color: Color(0x11000000),
+                        child: Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(12),
+                            child: Text('Նկարը չբացվեց։'),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+              if (item.imageUrls.isNotEmpty) const SizedBox(height: 8),
+              if (item.text.isNotEmpty)
+                SelectableText(
+                  item.text,
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: isUser
+                        ? Colors.white
+                        : (isDark ? Colors.white : Colors.black),
+                  ),
+                ),
               if (!isUser && item.passages.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 Wrap(
@@ -283,16 +895,28 @@ class _MessageBubble extends StatelessWidget {
                   children: item.passages.take(6).map((p) {
                     return ActionChip(
                       visualDensity: VisualDensity.compact,
-                      label: Text(p.ref, style: const TextStyle(fontSize: 12)),
+                      label: Text(p.displayRef, style: const TextStyle(fontSize: 12)),
                       onPressed: () => _openPassage(context, p),
                     );
                   }).toList(),
                 ),
               ],
-              if (!isUser)
+              if (!isUser && item.text.isNotEmpty)
                 Align(
                   alignment: Alignment.centerRight,
-                  child: IconButton(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (onSpeak != null)
+                        IconButton(
+                          tooltip: speaking ? 'Կանգնեցնել' : 'Լսել',
+                          iconSize: 20,
+                          onPressed: onSpeak,
+                          icon: Icon(
+                            speaking ? Icons.stop : Icons.volume_up,
+                          ),
+                        ),
+                      IconButton(
                     tooltip: 'Պատճենել',
                     iconSize: 18,
                     onPressed: () {
@@ -303,6 +927,8 @@ class _MessageBubble extends StatelessWidget {
                       );
                     },
                     icon: const Icon(Icons.copy),
+                      ),
+                    ],
                   ),
                 ),
             ],
