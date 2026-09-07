@@ -33,12 +33,6 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
   bool _sending = false;
   bool _indexReady = false;
 
-  static const _suggestions = [
-    'Ի՞նչ է ասում Աստվածաշունչը սիրո մասին',
-    'Ինչպե՞ս աղոթել դժվարության մեջ',
-    'Ո՞վ է Հիսուս Քրիստոսը ըստ Ավետարանի',
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -152,27 +146,6 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
               controller: _scrollController,
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
               children: [
-                Text(
-                  'Հարցրեք հայերենով Աստվածաշնչի մասին։ Պատասխանները հիմնվում են հավելվածի տեքստի վրա և չեն հորինում համարներ։',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: isDark ? Colors.grey[400] : Colors.grey[700],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                if (_messages.isEmpty) ...[
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: _suggestions.map((s) {
-                      return ActionChip(
-                        label: Text(s, style: const TextStyle(fontSize: 13)),
-                        onPressed: _indexReady && !_sending ? () => _send(s) : null,
-                      );
-                    }).toList(),
-                  ),
-                  const SizedBox(height: 12),
-                ],
                 for (final item in _messages)
                   _MessageBubble(
                     item: item,
@@ -216,12 +189,21 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
                       textInputAction: TextInputAction.send,
                       enabled: _indexReady && !_sending,
                       onSubmitted: (_) => _send(),
+                      cursorColor: Colors.black,
+                      style: const TextStyle(
+                        color: Colors.black,
+                        fontSize: 16,
+                      ),
                       decoration: InputDecoration(
                         hintText: _indexReady
                             ? 'Գրեք ձեր հարցը...'
                             : 'Բեռնվում է Աստվածաշնչի տեքստը...',
+                        hintStyle: TextStyle(
+                          color: Colors.grey[600],
+                          fontSize: 16,
+                        ),
                         filled: true,
-                        fillColor: isDark ? Colors.grey[850] : Colors.grey[100],
+                        fillColor: Colors.grey[100],
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(24),
                           borderSide: BorderSide.none,

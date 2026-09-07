@@ -79,7 +79,27 @@ class BibleContextRetriever {
     'գրքում',
     'համարում',
     'համարը',
+    'համարներ',
+    'համարները',
+    'համարների',
+    'տուր',
+    'տվեք',
+    'ցույց',
+    'գտիր',
+    'կարդա',
+    'թեմա',
+    'թեմայի',
+    'խոսքեր',
   };
+
+  static const _synonyms = [
+    ['աստված', 'աստծո', 'աստուծոյ', 'աստծու', 'աստծոյ', 'տէր', 'տերոջ'],
+    ['սեր', 'սէր', 'սիրո', 'սիրել', 'սիրեց', 'սիրում', 'սիրելով', 'սիրով'],
+    ['հաւատ', 'հավատ', 'հաւատք', 'հավատք', 'հաւատում'],
+    ['աղօթ', 'աղոթ', 'աղօթք', 'աղոթք', 'աղաչել'],
+    ['փրկութ', 'փրկություն', 'փրկիչ', 'փրկել'],
+    ['յիսուս', 'հիսուս', 'քրիստոս'],
+  ];
 
   static const _aliases = {
     'Հովհաննես': 'Յովհաննէս',
@@ -182,7 +202,7 @@ class BibleContextRetriever {
     return entries;
   }
 
-  List<BiblePassage> passagesForQuestion(String question, {int limit = 10}) {
+  List<BiblePassage> passagesForQuestion(String question, {int limit = 6}) {
     ensureReady();
     final found = <String, BiblePassage>{};
 
@@ -272,35 +292,71 @@ class BibleContextRetriever {
     return out;
   }
 
-  List<BiblePassage> _passagesFromKeywords(String question, {required int limit}) {
-    final index = _index ?? const <_IndexedVerse>[];
+  List<Set<String>> _queryConcepts(String question) {
     final tokens = TransliterationHelper.normalizeForSearch(question)
         .split(RegExp(r'\s+'))
         .where((t) => t.length >= 3 && !_stopwords.contains(t))
         .toList();
-    if (tokens.isEmpty) return const [];
+    return tokens.map(_needlesFor).toList();
+  }
 
+  Set<String> _needlesFor(String token) {
+    final needles = <String>{token};
+    if (token.length >= 4) {
+      needles.add(token.substring(0, 4));
+    }
+    for (final group in _synonyms) {
+      final hit = group.any(
+        (g) => token.contains(g) || g.contains(token),
+      );
+      if (hit) needles.addAll(group);
+    }
+    return needles.where((n) => n.length >= 3).toSet();
+  }
+
+  bool _matchesConcept(String haystack, Set<String> needles) {
+    for (final needle in needles) {
+      if (haystack.contains(needle)) return true;
+    }
+    return false;
+  }
+
+  List<BiblePassage> _passagesFromKeywords(String question, {required int limit}) {
+    final index = _index ?? const <_IndexedVerse>[];
+    final concepts = _queryConcepts(question);
+    if (concepts.isEmpty) return const [];
+
+    final requiredHits = concepts.length >= 2 ? concepts.length : 1;
     final scored = <_ScoredVerse>[];
+
     for (final verse in index) {
+      var hits = 0;
       var score = 0.0;
-      for (final token in tokens) {
-        if (verse.normalized.contains(token)) {
-          score += token.length >= 5 ? 2.5 : 1.5;
+      for (final needles in concepts) {
+        if (_matchesConcept(verse.normalized, needles)) {
+          hits += 1;
+          score += 8;
         }
       }
-      if (score <= 0) continue;
-      scored.add(_ScoredVerse(verse, score));
+      if (hits < requiredHits) continue;
+      scored.add(_ScoredVerse(verse, score + hits));
     }
 
+    if (scored.isEmpty) return const [];
     scored.sort((a, b) => b.score.compareTo(a.score));
-    return scored.take(limit).map((s) {
-      return BiblePassage(
-        book: s.verse.book,
-        chapter: s.verse.chapter,
-        verse: s.verse.verse,
-        text: s.verse.original,
-      );
-    }).toList();
+    final best = scored.first.score;
+    return scored
+        .where((s) => s.score >= best * 0.65)
+        .take(limit)
+        .map((s) {
+          return BiblePassage(
+            book: s.verse.book,
+            chapter: s.verse.chapter,
+            verse: s.verse.verse,
+            text: s.verse.original,
+          );
+        })
+        .toList();
   }
 }
 

@@ -7,7 +7,7 @@ import 'dart:convert';
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'spiritual_ai/spiritual_ai_screen.dart';
+import 'spiritual_ai/spiritual_ai_fab.dart';
 
 const String _readerFontSizePrefsKey = 'reader_font_size';
 const double _defaultReaderFontSize = 20;
@@ -187,6 +187,8 @@ class HomeScreen extends StatelessWidget {
           const SizedBox(width: 8),
         ],
       ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+      floatingActionButton: const SpiritualAiFab(),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 30.0, vertical: 24),
@@ -235,19 +237,6 @@ class HomeScreen extends StatelessWidget {
                   );
                 },
                 child: const Text('Չափում և արժեք'),
-              ),
-              const SizedBox(height: 18),
-              ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const SpiritualAiScreen(),
-                    ),
-                  );
-                },
-                icon: const Icon(Icons.auto_awesome),
-                label: const Text('Հոգևոր ԱԲ'),
               ),
               const SizedBox(height: 18),
               ElevatedButton.icon(
