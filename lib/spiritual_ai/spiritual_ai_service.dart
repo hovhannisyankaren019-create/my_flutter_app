@@ -86,7 +86,7 @@ class SpiritualAiService {
     }
     if (!imageAsk) {
       askMessage =
-          '$askMessage\n\n(Համակարգ. պատասխանիր հարցին Աստվածաշնչի համաձայն, հստակ և կարճ, միայն հայերենով, առանց փիլիսոփայության և առանց օտար լեզվի։)';
+          '$askMessage\n\n(Համակարգ. կարճ, հայերեն, ըստ Աստվածաշնչի, առանց փիլիսոփայության։)';
     }
 
     final headers = <String, String>{
@@ -210,76 +210,6 @@ class SpiritualAiService {
       throw SpiritualAiException('Նկարը դատարկ էր։');
     }
     return SpiritualAiImage(imageUrl: imageUrl, imageBytes: bytes);
-  }
-
-  Map<String, String> _headers() {
-    final headers = <String, String>{
-      'Content-Type': 'application/json',
-    };
-    if (SpiritualAiConfig.gateSecret.isNotEmpty) {
-      headers['X-Spiritual-Ai-Gate'] = SpiritualAiConfig.gateSecret;
-    }
-    return headers;
-  }
-
-  Future<String> transcribeArmenian({
-    required Uint8List bytes,
-    String mime = 'audio/mp4',
-  }) async {
-    if (!SpiritualAiConfig.isConfigured) {
-      throw SpiritualAiException('Հոգևոր ԱԲ-ն դեռ կարգավորված չէ։');
-    }
-    final response = await http
-        .post(
-          Uri.parse(SpiritualAiConfig.transcribeEndpoint),
-          headers: _headers(),
-          body: jsonEncode({
-            'audio': base64Encode(bytes),
-            'mime': mime,
-          }),
-        )
-        .timeout(const Duration(seconds: 60));
-    if (response.statusCode == 429) {
-      throw SpiritualAiException(
-        'Շատ հարցումներ եղան։ Խնդրում ենք մի փոքր սպասել։',
-      );
-    }
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw SpiritualAiException('Ձայնը չհաջողվեց հայերեն ճանաչել։');
-    }
-    final decoded = jsonDecode(response.body);
-    if (decoded is! Map) {
-      throw SpiritualAiException('Սերվերը անսպասելի պատասխան տվեց։');
-    }
-    final text = decoded['text']?.toString().trim() ?? '';
-    if (text.isEmpty) {
-      throw SpiritualAiException('Ձայնը դատարկ էր։ Ասեք հայերեն։');
-    }
-    return text;
-  }
-
-  Future<Uint8List?> speakArmenian(String text) async {
-    final trimmed = text.trim();
-    if (trimmed.isEmpty || !SpiritualAiConfig.isConfigured) return null;
-    try {
-      final response = await http
-          .post(
-            Uri.parse(SpiritualAiConfig.speakEndpoint),
-            headers: _headers(),
-            body: jsonEncode({'text': trimmed}),
-          )
-          .timeout(const Duration(seconds: 90));
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        return null;
-      }
-      final decoded = jsonDecode(response.body);
-      if (decoded is! Map) return null;
-      final b64 = decoded['audio']?.toString().trim() ?? '';
-      if (b64.isEmpty) return null;
-      return base64Decode(b64);
-    } catch (_) {
-      return null;
-    }
   }
 
   String? _serverError(String body) {

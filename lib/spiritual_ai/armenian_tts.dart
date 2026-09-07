@@ -7,13 +7,9 @@ import 'package:http/http.dart' as http;
 
 /// Plays Armenian aloud. Never uses the phone's English/Russian TTS for հայերեն.
 class ArmenianTts {
-  ArmenianTts(
-    this._engine, {
-    this.fetchServerAudio,
-  });
+  ArmenianTts(this._engine);
 
   final FlutterTts _engine;
-  final Future<Uint8List?> Function(String text)? fetchServerAudio;
   final AudioPlayer _player = AudioPlayer();
   Completer<void>? _chunkDone;
   bool _cancelled = false;
@@ -36,11 +32,6 @@ class ArmenianTts {
     _cancelled = false;
 
     if (await _speakGoogleHy(spoken)) return;
-    if (_cancelled) return;
-    final server = await fetchServerAudio?.call(spoken);
-    if (server != null && server.isNotEmpty && !_cancelled) {
-      await _playBytes(server);
-    }
   }
 
   Future<void> dispose() async {

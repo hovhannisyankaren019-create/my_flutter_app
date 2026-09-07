@@ -322,7 +322,7 @@ async function generateReply({message, history, passages, followUp = false}) {
   const passageBlock = (Array.isArray(passages) ? passages.slice(0, 12) : [])
     .map((p) => {
       const ref = asString(p.ref, 80);
-      const text = asString(p.text, 900);
+      const text = asString(p.text, 350);
       if (!ref || !text) return "";
       return `[${ref}] ${text}`;
     })
@@ -333,13 +333,13 @@ async function generateReply({message, history, passages, followUp = false}) {
   if (knowledge) {
     messages.push({
       role: "system",
-      content: `Սեփական նյութեր (սրանցով պատասխանիր, եթե հարցը համապատասխանում է):\n${knowledge.slice(0, 12000)}`,
+      content: `Սեփական նյութեր (սրանցով պատասխանիր, եթե հարցը համապատասխանում է):\n${knowledge.slice(0, 4000)}`,
     });
   }
 
-  for (const turn of Array.isArray(history) ? history.slice(-12) : []) {
+  for (const turn of Array.isArray(history) ? history.slice(-6) : []) {
     const role = turn.role === "assistant" ? "assistant" : "user";
-    const content = asString(turn.content, 2500);
+    const content = asString(turn.content, 700);
     if (!content) continue;
     messages.push({role, content});
   }
@@ -379,83 +379,6 @@ async function generateReply({message, history, passages, followUp = false}) {
   const reply = data.choices?.[0]?.message?.content?.trim() || "";
   if (!reply) throw new Error("empty");
   return reply;
-}
-
-async function transcribeArmenian(audioB64, mime) {
-  const openaiKey = process.env.OPENAI_API_KEY || "";
-  if (!openaiKey) throw new Error("not_configured");
-  const bin = Buffer.from(String(audioB64 || ""), "base64");
-  if (bin.length < 80) throw new Error("empty");
-  const type = String(mime || "audio/mp4");
-  const ext = type.includes("wav")
-    ? "wav"
-    : type.includes("mpeg") || type.includes("mp3")
-      ? "mp3"
-      : "m4a";
-  const form = new FormData();
-  form.append("file", new Blob([bin], {type}), `speech.${ext}`);
-  form.append("model", "whisper-1");
-  form.append("language", "hy");
-  form.append("response_format", "json");
-  form.append(
-    "prompt",
-    "Սա հայերեն հոգևոր հարց է. Հիսուս Քրիստոս, Աստվածաշունչ, աղոթք, համար, Ավետարան, հավատք։",
-  );
-  const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-    method: "POST",
-    headers: {Authorization: `Bearer ${openaiKey}`},
-    body: form,
-  });
-  if (!res.ok) {
-    const err = await res.text();
-    console.error("Whisper error", res.status, err.slice(0, 300));
-    throw new Error("upstream");
-  }
-  const data = await res.json();
-  const text = String(data.text || "").trim();
-  if (!text) throw new Error("empty");
-  return text;
-}
-
-async function speakArmenian(text) {
-  const openaiKey = process.env.OPENAI_API_KEY || "";
-  if (!openaiKey) throw new Error("not_configured");
-  const input = String(text || "").trim().slice(0, 4000);
-  if (!input) throw new Error("empty");
-
-  async function once(model, extra = {}) {
-    const res = await fetch("https://api.openai.com/v1/audio/speech", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${openaiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model,
-        voice: "nova",
-        input,
-        response_format: "mp3",
-        ...extra,
-      }),
-    });
-    if (!res.ok) {
-      const err = await res.text();
-      console.error("TTS error", model, res.status, err.slice(0, 300));
-      return null;
-    }
-    const buf = Buffer.from(await res.arrayBuffer());
-    if (buf.length < 80) return null;
-    return buf.toString("base64");
-  }
-
-  const neural = await once("gpt-4o-mini-tts", {
-    instructions:
-      "Speak only Eastern Armenian, native and clear. Warm pastoral voice. Do not speak English or Russian.",
-  });
-  if (neural) return neural;
-  const basic = await once("tts-1");
-  if (!basic) throw new Error("upstream");
-  return basic;
 }
 
 function imageScenePrompt(userPrompt) {
@@ -781,40 +704,8 @@ async function handleTelegram(req, res, body) {
   }
 }
 
-async function handleAppVoice(req, res, body, kind) {
-  const expectedGate = process.env.SPIRITUAL_AI_GATE || "";
-  if (expectedGate) {
-    const provided = String(req.headers["x-spiritual-ai-gate"] || "");
-    if (provided !== expectedGate) {
-      json(res, 401, {error: "Unauthorized"});
-      return;
-    }
-  }
-  const ip = clientIp(req);
-  if (rateLimited(ip, 12)) {
-    json(res, 429, {error: "Too many requests"});
-    return;
-  }
-  try {
-    if (kind === "transcribe") {
-      const text = await transcribeArmenian(body.audio, body.mime);
-      json(res, 200, {text});
-      return;
-    }
-    const audio = await speakArmenian(asString(body.text, 4000));
-    json(res, 200, {audio, mimeType: "audio/mpeg"});
-  } catch (error) {
-    if (error.message === "not_configured") {
-      json(res, 500, {error: "Server is not configured"});
-      return;
-    }
-    if (error.message === "upstream" || error.message === "empty") {
-      json(res, 502, {error: "Upstream error"});
-      return;
-    }
-    console.error(error);
-    json(res, 500, {error: "Server error"});
-  }
+async function handleAppVoice(req, res) {
+  json(res, 404, {error: "Voice uses the phone, not OpenAI."});
 }
 
 async function handleAppChat(req, res, body) {
@@ -917,12 +808,12 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (pathname === "/transcribe") {
-    await handleAppVoice(req, res, body, "transcribe");
+    await handleAppVoice(req, res);
     return;
   }
 
   if (pathname === "/speak") {
-    await handleAppVoice(req, res, body, "speak");
+    await handleAppVoice(req, res);
     return;
   }
 
