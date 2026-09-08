@@ -11,7 +11,9 @@ const SYSTEM_PROMPT = `Դու «Հոգևոր ԱԲ» ես՝ Ararat Bible-ի խո�
 - Առաջին նախադասությամբ տուր հստակ պատասխանը՝ ըստ Աստվածաշնչի։ Հետո առավելագույնը 2–3 կարճ նախադասություն։
 - Փիլիսոփայություն, մարդկային կարծիք, հոգեբանություն, երկար քարոզ մի գրիր։
 - Մի սկսիր «սա խոր հարց է», «կյանքում կարևոր է», «պետք է հասկանալ» և նման նախաբաններով։
-- Ամբողջ պատասխանը հայերեն տառերով և հայերեն բառերով։ Անգլերեն, ռուսերեն կամ այլ լեզու մի խառնիր։
+- Ամբողջ պատասխանը միայն հայերեն տառերով և հայերեն բառերով։ Լատինատառ, անգլերեն, ռուսերեն բառ մի գրիր։
+- Մի գրիր այսպիսի բառեր. God, Jesus, Christ, Bible, faith, prayer, sin, love, hope, grace, salvation, church, gospel, Lord, Amen, OK, yes, no.
+- Աստվածաշնչյան բառերը գրիր հայերեն՝ Աստված, Հիսուս, Քրիստոս, Աստվածաշունչ, հավատ, աղոթք, մեղք, սեր, հույս, շնորհ, փրկություն, եկեղեցի, ավետարան, Տեր, ամեն։
 
 Կանոններ.
 1. Պատասխանիր միայն հայերենով։ Օտարալեզու բառեր մի գրիր։
@@ -29,7 +31,8 @@ const SYSTEM_PROMPT = `Դու «Հոգևոր ԱԲ» ես՝ Ararat Bible-ի խո�
 13. Եթե հարցնում են «ով է այս/այն մարդը» կամ «ով է X-ը», առաջին նախադասությամբ ասա՝ Աստվածաշնչում նա ով է։ Մի շփոթիր համանուններին և մի վերցրու պատահական առաջին հանդիպած անունը։ «Հովիվը» նշանակում է բարի հովիվը՝ Տերն ու Հիսուսը, ոչ Հաբելին։ Եթե մի անունով մի քանի հայտնի անձ կա, կարճ ասա գլխավորներին։
 14. Եթե շարունակություն չէ, նախորդ հարցի համարը մի կրկնիր և մի մեկնաբանիր։ Պատասխանիր միայն այս նոր հարցին։
 15. Եթե հարցը կարելի է պատասխանել Աստվածաշնչի ուսմունքով (հավատ, կյանք, ընտանիք, ամուսնություն, երեխաներ, աշխատանք, մահ, հոգի, մեղք, չարիք, հույս, աղոթք, վարք, խիղճ, սեր, ներում և նմաններ), պատասխանիր Աստվածաշնչի համաձայն։ Մի ասա, որ կապ չունի, եթե Աստվածաշունչը այդ մասին խոսում է։ Միայն ակնհայտ աշխարհիկ բաներին (սպորտ, տեխնիկա, խոհանոց, խաղեր, աշխարհիկ նորություններ) ասա, որ կապ չունի, և համարներ մի տուր։
-16. Նկարներ կամ քարտեզներ մի խոստացիր և մի մեկնաբանիր որպես նկարի պատասխան։`;
+16. Նկարներ կամ քարտեզներ մի խոստացիր և մի մեկնաբանիր որպես նկարի պատասխան։
+17. Պատասխանում ոչ մի անգլերեն կամ այլ օտար բառ չպիտի լինի, նույնիսկ մեկը։`;
 
 const hits = new Map();
 const telegramHistory = new Map();
@@ -316,6 +319,73 @@ function pathnameOf(req) {
   }
 }
 
+function hasForeignWords(text) {
+  return /[A-Za-z]{3,}/.test(String(text || ""));
+}
+
+const FOREIGN_TO_HY = [
+  [/\bHoly Spirit\b/gi, "Սուրբ Հոգի"],
+  [/\bJesus Christ\b/gi, "Հիսուս Քրիստոս"],
+  [/\bGod\b/g, "Աստված"],
+  [/\bgod\b/g, "Աստված"],
+  [/\bJesus\b/gi, "Հիսուս"],
+  [/\bChrist\b/gi, "Քրիստոս"],
+  [/\bBible\b/gi, "Աստվածաշունչ"],
+  [/\bLord\b/g, "Տեր"],
+  [/\bGospel\b/gi, "Ավետարան"],
+  [/\bgospel\b/g, "ավետարան"],
+  [/\bchurch\b/gi, "եկեղեցի"],
+  [/\bfaith\b/gi, "հավատ"],
+  [/\bprayer\b/gi, "աղոթք"],
+  [/\bsalvation\b/gi, "փրկություն"],
+  [/\bgrace\b/gi, "շնորհ"],
+  [/\bsin\b/gi, "մեղք"],
+  [/\blove\b/gi, "սեր"],
+  [/\bhope\b/gi, "հույս"],
+  [/\bpeace\b/gi, "խաղաղություն"],
+  [/\bheaven\b/gi, "երկինք"],
+  [/\bAmen\b/gi, "ամեն"],
+  [/\bOK\b/g, "լավ"],
+  [/\bok\b/g, "լավ"],
+  [/\byes\b/gi, "այո"],
+  [/\bno\b/gi, "ոչ"],
+];
+
+function replaceForeignWords(text) {
+  let out = String(text || "");
+  for (const [pattern, hy] of FOREIGN_TO_HY) {
+    out = out.replace(pattern, hy);
+  }
+  return out.replace(/[A-Za-z]{3,}/g, "").replace(/[ \t]{2,}/g, " ").trim();
+}
+
+async function completeChat(openaiKey, messages) {
+  const openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${openaiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+      temperature: 0.2,
+      max_tokens: 450,
+      messages,
+    }),
+  });
+
+  if (!openaiRes.ok) {
+    const errText = await openaiRes.text();
+    console.error("OpenAI error", openaiRes.status, errText.slice(0, 500));
+    throw new Error("upstream");
+  }
+
+  const data = await openaiRes.json();
+  const reply = data.choices?.[0]?.message?.content?.trim() || "";
+  if (!reply) throw new Error("empty");
+  return reply;
+}
+
 async function generateReply({message, history, passages, followUp = false}) {
   const openaiKey = process.env.OPENAI_API_KEY || "";
   if (!openaiKey) {
@@ -356,31 +426,29 @@ async function generateReply({message, history, passages, followUp = false}) {
         : `Օգտատիրոջ նոր հարցը:\n${message}\n\n`) +
       (passageBlock
         ? `Տրված Աստվածաշնչի հատվածներ (պատասխանիր սրանցով, առանց փիլիսոփայության. եթե հարցը համար է, միայն մեջբերիր):\n${passageBlock}`
-        : "Տրված հատվածներ չկան։ Համարներ մի հորինիր։ Հարցին պատասխանիր Աստվածաշնչի համաձայն, կարճ, միայն հայերենով, առանց փիլիսոփայության և առանց օտար լեզվի։"),
+        : "Տրված հատվածներ չկան։ Համարներ մի հորինիր։ Հարցին պատասխանիր Աստվածաշնչի համաձայն, կարճ, միայն հայերենով, առանց փիլիսոփայության և առանց օտար լեզվի։") +
+      "\n\nԿարևոր. պատասխանը միայն հայերեն բառերով. անգլերեն բառ մի գրիր։",
   });
 
-  const openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${openaiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
-      temperature: 0.25,
-      max_tokens: 450,
-      messages,
-    }),
-  });
-
-  if (!openaiRes.ok) {
-    const errText = await openaiRes.text();
-    console.error("OpenAI error", openaiRes.status, errText.slice(0, 500));
-    throw new Error("upstream");
+  let reply = await completeChat(openaiKey, messages);
+  if (hasForeignWords(reply)) {
+    try {
+      reply = await completeChat(openaiKey, [
+        ...messages,
+        {role: "assistant", content: reply},
+        {
+          role: "user",
+          content:
+            "Այս պատասխանում օտար բառեր կան։ Գրիր նույն իմաստը միայն հայերեն տառերով և հայերեն բառերով։ Անգլերեն, ռուսերեն կամ լատիներեն բառ մի թող։",
+        },
+      ]);
+    } catch (error) {
+      console.error("Armenian rewrite failed", error);
+    }
   }
-
-  const data = await openaiRes.json();
-  const reply = data.choices?.[0]?.message?.content?.trim() || "";
+  if (hasForeignWords(reply)) {
+    reply = replaceForeignWords(reply);
+  }
   if (!reply) throw new Error("empty");
   return reply;
 }
