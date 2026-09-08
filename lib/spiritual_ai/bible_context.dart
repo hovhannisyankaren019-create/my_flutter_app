@@ -92,6 +92,82 @@ class BibleContextRetriever {
   BibleContextRetriever._();
   static final BibleContextRetriever instance = BibleContextRetriever._();
 
+  static const offTopicReply =
+      'Այս հարցը Աստվածաշնչի հետ կապ չունի։ Ես պատասխանում եմ միայն Աստվածաշնչյան հարցերին։';
+  static const imagesOffReply =
+      'Նկարների ֆունկցիան հիմա անջատված է։ Գրեք Աստվածաշնչյան հարց։';
+
+  static const _bibleVocab = [
+    'աստվածաշունչ',
+    'աստուածաշունչ',
+    'աստվածաշնչ',
+    'աստուածաշնչ',
+    'աստված',
+    'աստուած',
+    'աստծո',
+    'աստուծոյ',
+    'հիսուս',
+    'յիսուս',
+    'քրիստոս',
+    'մեսիա',
+    'սուրբ հոգի',
+    'ավետարան',
+    'աւետարան',
+    'առաքյալ',
+    'առաքեալ',
+    'մարգարե',
+    'մարգարէ',
+    'հրեշտակ',
+    'եկեղեցի',
+    'տաճար',
+    'պատվիրան',
+    'պատուիրան',
+    'ուխտ',
+    'խաչ',
+    'հարություն',
+    'յարութիւն',
+    'մկրտութ',
+    'մկրտիչ',
+    'փրկութ',
+    'փրկիչ',
+    'մեղք',
+    'ներում',
+    'աղոթ',
+    'աղօթ',
+    'հավատ',
+    'հաւատ',
+    'հոգևոր',
+    'հոգեւոր',
+    'սաղմոս',
+    'առակ',
+    'հայտնութ',
+    'յայտնութ',
+    'իսրայել',
+    'երուսաղեմ',
+    'գալիլիա',
+    'նազարեթ',
+    'բեթղեհեմ',
+    'եգիպտոս',
+    'քանաան',
+    'հրեա',
+    'հեթանոս',
+    'քահանա',
+    'փարիսեցի',
+    'սատանա',
+    'դժոխք',
+    'երկինք',
+    'արքայութ',
+    'օրհն',
+    'նզովք',
+    'արդարութ',
+    'շնորհ',
+    'ապաշխար',
+    'հաղորդութ',
+    'բարի հովիվ',
+    'բարի հովիւ',
+    'տէր',
+  ];
+
   List<_IndexedVerse>? _index;
   late final List<MapEntry<String, String>> _bookNames;
 
@@ -143,16 +219,6 @@ class BibleContextRetriever {
     'անձ',
     'անձը',
   };
-
-  static const _synonyms = [
-    ['աստված', 'աստծո', 'աստուծոյ', 'աստծու', 'աստծոյ', 'տէր', 'տերոջ'],
-    ['սեր', 'սէր', 'սիրո', 'սիրել', 'սիրեց', 'սիրում', 'սիրելով', 'սիրով'],
-    ['իրեններ', 'իրաններ', 'իրանց', 'իւրեանց'],
-    ['հաւատ', 'հավատ', 'հաւատք', 'հավատք', 'հաւատում'],
-    ['աղօթ', 'աղոթ', 'աղօթք', 'աղոթք', 'աղաչել'],
-    ['փրկութ', 'փրկություն', 'փրկիչ', 'փրկել'],
-    ['յիսուս', 'հիսուս', 'քրիստոս'],
-  ];
 
   static const _aliases = {
     'Հովհաննես': 'Յովհաննէս',
@@ -750,26 +816,11 @@ class BibleContextRetriever {
       return found.values.take(cap).toList();
     }
 
-    for (final passage in _passagesFromPhrase(question, limit: cap)) {
-      found.putIfAbsent(passage.ref, () => passage);
-      if (found.length >= cap) break;
-    }
-
-    if (wantsLocateVerse(question) && found.isNotEmpty) {
-      return found.values.take(1).toList();
-    }
-
-    if (found.length >= cap) {
-      return found.values.take(cap).toList();
-    }
-
-    for (final passage in _passagesFromKeywords(
-      question,
-      limit: cap,
-      loose: verseOnly,
-    )) {
-      found.putIfAbsent(passage.ref, () => passage);
-      if (found.length >= cap) break;
+    if (verseOnly || wantsLocateVerse(question)) {
+      for (final passage in _passagesFromPhrase(question, limit: cap)) {
+        found.putIfAbsent(passage.ref, () => passage);
+        if (found.length >= cap) break;
+      }
     }
 
     if (wantsLocateVerse(question) && found.isNotEmpty) {
@@ -947,6 +998,33 @@ class BibleContextRetriever {
         .trim();
   }
 
+  bool looksLikeImageAsk(String question) {
+    return _looksLikeImageAsk(question.toLowerCase());
+  }
+
+  bool isBibleRelated(String question) {
+    ensureReady();
+    final raw = question.trim();
+    if (raw.isEmpty) return false;
+    if (quoteExplicitReferences(raw).matched) return true;
+    if (_parseReferenceSpecs(raw).isNotEmpty) return true;
+    if (_passagesFromPeople(raw, limit: 1).isNotEmpty) return true;
+    if (_passagesFromTopics(raw, limit: 1).isNotEmpty) return true;
+    if (_passagesFromFamousPhrases(raw).isNotEmpty) return true;
+
+    final n = TransliterationHelper.normalizeForSearch(raw);
+    if (n.isEmpty) return false;
+    for (final term in _bibleVocab) {
+      final tn = TransliterationHelper.normalizeForSearch(term);
+      if (tn.length >= 3 && n.contains(tn)) return true;
+    }
+    for (final entry in _bookNames) {
+      final bn = TransliterationHelper.normalizeForSearch(entry.key);
+      if (bn.length >= 4 && n.contains(bn)) return true;
+    }
+    return false;
+  }
+
   bool looksLikeFollowUp(
     String question, {
     required bool hasPriorTurn,
@@ -958,7 +1036,13 @@ class BibleContextRetriever {
     if (t.isEmpty) return false;
     if (wantsIdentity(t)) {
       final name = identitySubject(t);
+      if (name.length >= 3 && !isBibleRelated(question)) return false;
       if (name.length >= 3) return false;
+    }
+    if (!isBibleRelated(question) &&
+        previousUser.trim().isNotEmpty &&
+        !isBibleRelated(previousUser)) {
+      return false;
     }
     if (wantsLocateVerse(t)) return false;
     if (wantsVerseOnly(t) && !wantsMoreVerses(t)) return false;
@@ -1306,81 +1390,4 @@ class BibleContextRetriever {
     }
     return out;
   }
-
-  List<Set<String>> _queryConcepts(String question) {
-    final tokens = TransliterationHelper.normalizeForSearch(question)
-        .split(RegExp(r'\s+'))
-        .where((t) => t.length >= 3 && !_stopwords.contains(t))
-        .toList();
-    return tokens.map(_needlesFor).toList();
-  }
-
-  Set<String> _needlesFor(String token) {
-    final needles = <String>{token};
-    if (token.length >= 4) {
-      needles.add(token.substring(0, 4));
-    }
-    for (final group in _synonyms) {
-      final hit = group.any(
-        (g) => token.contains(g) || g.contains(token),
-      );
-      if (hit) needles.addAll(group);
-    }
-    return needles.where((n) => n.length >= 3).toSet();
-  }
-
-  bool _matchesConcept(String haystack, Set<String> needles) {
-    for (final needle in needles) {
-      if (haystack.contains(needle)) return true;
-    }
-    return false;
-  }
-
-  List<BiblePassage> _passagesFromKeywords(
-    String question, {
-    required int limit,
-    bool loose = false,
-  }) {
-    final index = _index ?? const <_IndexedVerse>[];
-    final concepts = _queryConcepts(question);
-    if (concepts.isEmpty) return const [];
-
-    final requiredHits = loose ? 1 : (concepts.length >= 2 ? concepts.length : 1);
-    final scored = <_ScoredVerse>[];
-
-    for (final verse in index) {
-      var hits = 0;
-      var score = 0.0;
-      for (final needles in concepts) {
-        if (_matchesConcept(verse.normalized, needles)) {
-          hits += 1;
-          score += 8;
-        }
-      }
-      if (hits < requiredHits) continue;
-      scored.add(_ScoredVerse(verse, score + hits));
-    }
-
-    if (scored.isEmpty) return const [];
-    scored.sort((a, b) => b.score.compareTo(a.score));
-    final best = scored.first.score;
-    return scored
-        .where((s) => s.score >= best * 0.65)
-        .take(limit)
-        .map((s) {
-          return BiblePassage(
-            book: s.verse.book,
-            chapter: s.verse.chapter,
-            verse: s.verse.verse,
-            text: s.verse.original,
-          );
-        })
-        .toList();
-  }
-}
-
-class _ScoredVerse {
-  final _IndexedVerse verse;
-  final double score;
-  _ScoredVerse(this.verse, this.score);
 }

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../main.dart';
-import '../spiritual_image/spiritual_image_service.dart';
 import 'bible_context.dart';
 import 'spiritual_ai_config.dart';
 import 'spiritual_ai_service.dart';
@@ -18,15 +17,11 @@ class _ChatItem {
   final String role;
   final String text;
   final List<BiblePassage> passages;
-  final Uint8List? imageBytes;
-  final List<String> imageUrls;
 
   const _ChatItem({
     required this.role,
     required this.text,
     this.passages = const [],
-    this.imageBytes,
-    this.imageUrls = const [],
   });
 }
 
@@ -34,7 +29,6 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
   final _service = SpiritualAiService();
-  final _imageService = SpiritualImageService();
   final _messages = <_ChatItem>[];
   bool _sending = false;
   bool _indexReady = false;
@@ -83,151 +77,49 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
         hasPriorTurn: previous.any((item) => item.role == 'assistant'),
         previousUser: lastUserText,
       );
+
+      if (retriever.looksLikeImageAsk(text) &&
+          !retriever.isBibleRelated(text)) {
+        setState(() {
+          _messages.add(
+            const _ChatItem(
+              role: 'assistant',
+              text: BibleContextRetriever.imagesOffReply,
+            ),
+          );
+        });
+        return;
+      }
+
+      if (!followUp && !retriever.isBibleRelated(text)) {
+        setState(() {
+          _messages.add(
+            const _ChatItem(
+              role: 'assistant',
+              text: BibleContextRetriever.offTopicReply,
+            ),
+          );
+        });
+        return;
+      }
+
       final searchQuery = followUp ? _searchContext(text, previous) : text;
       final history = _apiHistory(previous, followUp: followUp);
-      final treatAsVerseQuote = !retriever.wantsCommentary(text) &&
-          !_isImageRequest(text) &&
-          (retriever.quoteExplicitReferences(text).matched ||
-              (!followUp && retriever.wantsVerseOnly(text)) ||
-              (followUp && retriever.wantsMoreVerses(text)));
-      final wantsLookupImage = !treatAsVerseQuote &&
-          (_isImageRequest(text) || _isHistoricalImageRequest(text));
-      if (wantsLookupImage) {
-        final prompt = _imageSearchPrompt(text, previous);
-        final askMessage =
-            '$text\n\n(Համակարգ. նկարն ու քարտեզը հավելվածը կցուցադրի. դու միայն կարճ բացատրիր վայրը հայերենով և երբեք մի ասա, որ չես կարող նկար կամ քարտեզ տալ։)';
-        List<SpiritualFoundImage> found = const [];
-        var factsText = '';
-        var sources = const <SpiritualFoundImage>[];
-        Object? findError;
-        SpiritualAiReply? reply;
-        try {
-          final lookup = await _imageService.findHistorical(
-            prompt: prompt,
-            exclude: _seenImageUrls(previous),
-          );
-          found = lookup.images.where((item) {
-            final key = _imageKey(item.url);
-            return !_seenImageUrls(previous)
-                .map(_imageKey)
-                .contains(key);
-          }).toList();
-          factsText = lookup.factsText;
-          sources = lookup.sources;
-        } catch (e) {
-          findError = e;
-        }
-        final groundedAsk = factsText.isEmpty
-            ? askMessage
-            : '$askMessage\n\nԱղբյուրներ (պատմություն, քարտեզ, ժամանակաշրջան — պատասխանիր սրանցով, թվեր մի հորինիր).\n$factsText';
-        try {
-          reply = await _service.ask(
-            message: groundedAsk,
-            history: history,
-            followUp: followUp,
-            searchQuery: searchQuery,
-          );
-        } catch (_) {}
-        if (!mounted) return;
-        final replyText = _withoutRefusal(reply?.text ?? '');
-        final caption = StringBuffer();
-        if (replyText.isNotEmpty) {
-          caption.writeln(replyText);
-        }
-        if (sources.isNotEmpty) {
-          if (caption.isNotEmpty) caption.writeln();
-          caption.writeln('Աղբյուրներ');
-          for (final source in sources.take(4)) {
-            final name = source.source.isNotEmpty ? source.source : source.title;
-            caption.writeln('• $name: ${source.url}');
-          }
-        } else if (found.isNotEmpty) {
-          if (caption.isNotEmpty) caption.writeln();
-          caption.write(
-            'Նկարներն ու քարտեզները վերցված են Google-ից և հանրային հավաստի աղբյուրներից, ոչ գեներացված են։',
-          );
-        }
-        if (found.isEmpty && caption.isEmpty) {
-          throw findError ??
-              SpiritualImageException(
-                'Համապատասխան նկար չգտնվեց հավաստի աղբյուրներում։ Գրեք ավելի կոնկրետ՝ վայր, տեսարան կամ քարտեզ։',
-              );
-        }
-        setState(() {
-          _messages.add(
-            _ChatItem(
-              role: 'assistant',
-              text: caption.toString().trim(),
-              passages: reply?.passages ?? const [],
-              imageUrls: [for (final item in found.take(3)) item.url],
-            ),
-          );
-        });
-      } else {
-        final reply = await _service.ask(
-          message: text,
-          history: history,
-          followUp: followUp,
-          searchQuery: searchQuery,
-        );
-        if (!mounted) return;
-        final refusedImage = _looksLikeRefusal(reply.text) &&
-            (reply.text.toLowerCase().contains('նկար') ||
-                reply.text.toLowerCase().contains('գեներաց') ||
-                reply.text.toLowerCase().contains('image') ||
-                _isImageRequest(text));
-        if (refusedImage) {
-          final prompt = _imageSearchPrompt(text, previous);
-          if (prompt.trim().isNotEmpty) {
-            final lookup = await _imageService.findHistorical(
-              prompt: prompt,
-              exclude: _seenImageUrls(previous),
-            );
-            if (!mounted) return;
-            final seenKeys = _seenImageUrls(previous).map(_imageKey).toSet();
-            final urls = [
-              for (final item in lookup.images)
-                if (!seenKeys.contains(_imageKey(item.url))) item.url,
-            ].take(3).toList();
-            final caption = StringBuffer();
-            if (lookup.sources.isNotEmpty) {
-              caption.writeln('Աղբյուրներ');
-              for (final source in lookup.sources.take(4)) {
-                final name =
-                    source.source.isNotEmpty ? source.source : source.title;
-                caption.writeln('• $name: ${source.url}');
-              }
-            } else if (lookup.images.isNotEmpty) {
-              caption.write(
-                'Նկարները վերցված են Google-ից և հանրային հավաստի աղբյուրներից, ոչ գեներացված են։',
-              );
-            }
-            setState(() {
-              _messages.add(
-                _ChatItem(
-                  role: 'assistant',
-                  text: caption.toString().trim(),
-                  imageUrls: urls,
-                ),
-              );
-            });
-            return;
-          }
-        }
-        setState(() {
-          _messages.add(
-            _ChatItem(
-              role: 'assistant',
-              text: reply.text,
-              passages: reply.passages,
-            ),
-          );
-        });
-      }
-    } on SpiritualImageException catch (e) {
+      final reply = await _service.ask(
+        message: text,
+        history: history,
+        followUp: followUp,
+        searchQuery: searchQuery,
+      );
       if (!mounted) return;
       setState(() {
-        _messages.add(_ChatItem(role: 'assistant', text: e.message));
+        _messages.add(
+          _ChatItem(
+            role: 'assistant',
+            text: reply.text,
+            passages: reply.passages,
+          ),
+        );
       });
     } on SpiritualAiException catch (e) {
       if (!mounted) return;
@@ -299,241 +191,6 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
     return [lastOf('user'), lastOf('assistant'), text]
         .where((part) => part.isNotEmpty)
         .join('\n');
-  }
-
-  bool _isHistoricalImageRequest(String text) {
-    final t = text.toLowerCase().trim();
-    const phrases = [
-      'քարտեզ',
-      'քարտէզ',
-      'map',
-      'հնագիտական',
-      'հնավայր',
-      'լուսանկար',
-      'իրական նկար',
-      'պատմական նկար',
-      'պատմական քարտեզ',
-      'գտիր նկար',
-      'գտիր քարտեզ',
-      'տրամադրել քարտեզ',
-      'տուր քարտեզ',
-      'կարող ես քարտեզ',
-      'archaeolog',
-      'historical map',
-      'where was',
-      'պատմական',
-      'պատմություն',
-      'ժամանակաշրջան',
-      'թվական',
-      'մ.թ.ա',
-      'մ.թ.',
-      'երբ էր',
-      'երբ է եղել',
-      'որ դարում',
-      'chronolog',
-    ];
-    for (final phrase in phrases) {
-      if (t.contains(phrase)) return true;
-    }
-    return _hasBiblicalPlace(t) &&
-        (t.contains('որտեղ') ||
-            t.contains('տեղը') ||
-            t.contains('վայր') ||
-            t.contains('երբ') ||
-            t.contains('պատմ'));
-  }
-
-  bool _hasBiblicalPlace(String t) {
-    const places = [
-      'երիքով',
-      'երուսաղեմ',
-      'բեթղեհեմ',
-      'գալիլեա',
-      'նազարեթ',
-      'կափառնաում',
-      'հորդանան',
-      'սինա',
-      'եդեմ',
-      'գողգոթա',
-      'հեբրոն',
-      'բաբելոն',
-      'սուրբ երկիր',
-      'jericho',
-      'jerusalem',
-      'bethlehem',
-      'galilee',
-      'nazareth',
-    ];
-    return places.any(t.contains);
-  }
-
-  bool _looksLikeRefusal(String text) {
-    final t = text.toLowerCase();
-    const phrases = [
-      'չեմ կարող',
-      'չկարողանամ',
-      'չեմ տրամադր',
-      'չեմ կարողանում',
-      'չեմ գեներաց',
-      'չեմ ուղարկ',
-      'cannot provide',
-      "can't provide",
-      'unable to provide',
-      'cannot generate',
-      "can't generate",
-      'cannot send',
-      'նկարներ կամ քարտեզներ',
-    ];
-    return phrases.any(t.contains);
-  }
-
-  String _withoutRefusal(String text) {
-    final trimmed = text.trim();
-    if (trimmed.isEmpty || _looksLikeRefusal(trimmed)) return '';
-    return trimmed;
-  }
-
-  bool _isImageRequest(String text) {
-    final t = text.toLowerCase().trim();
-    if (t.contains('պատկերաց')) return false;
-    if (t.contains('նկարագր') &&
-        !t.contains('նկարով') &&
-        !t.contains('նկարիր') &&
-        !t.contains('նկարը') &&
-        !t.contains('նկարներ')) {
-      return false;
-    }
-    const phrases = [
-      'նկարով պատկեր',
-      'նկարով ցույց',
-      'նկարով տուր',
-      'պատկերիր',
-      'պատկերի',
-      'պատկերով',
-      'նկարիր',
-      'նկարել',
-      'նկարը տուր',
-      'նկար տուր',
-      'նկարներ',
-      'նկար ուղարկ',
-      'ուղարկիր նկար',
-      'ուղարկել նկար',
-      'կարող ես նկար',
-      'նկար ստեղծ',
-      'նկար գեներաց',
-      'գեներացրու',
-      'գեներացնել',
-      'մի նկար',
-      'որպես նկար',
-      'նկարի տեսք',
-      'show as image',
-      'show a picture',
-      'draw this',
-      'generate image',
-      'make an image',
-      'send an image',
-      'send a picture',
-    ];
-    for (final phrase in phrases) {
-      if (t.contains(phrase)) return true;
-    }
-    if (t.contains('նկար')) return true;
-    return RegExp(r'(^|[^ա-ֆԱ-Ֆ])նկար([^ա-ֆԱ-Ֆ]|$)').hasMatch(t);
-  }
-
-  List<String> _seenImageUrls(List<_ChatItem> messages) {
-    return [
-      for (final item in messages)
-        for (final url in item.imageUrls)
-          if (url.isNotEmpty) url,
-    ];
-  }
-
-  String _imageKey(String url) {
-    final uri = Uri.tryParse(url);
-    if (uri == null || uri.host.isEmpty) {
-      return url.split('?').first.toLowerCase();
-    }
-    return '${uri.host}${uri.path}'.toLowerCase();
-  }
-
-  String _stripImageVerbs(String request) {
-    var extra = request;
-    const strips = [
-      'նկարով պատկերիր',
-      'նկարով պատկերի',
-      'նկարով ցույց տուր',
-      'նկարով տուր',
-      'պատկերիր',
-      'պատկերի',
-      'նկարիր',
-      'նկար գեներացրու',
-      'գեներացրու նկար',
-      'նկար ստեղծիր',
-      'նկարը տուր',
-      'նկար տուր',
-      'էլի նկարներ',
-      'էլի նկար',
-      'ուրիշ նկարներ',
-      'ուրիշ նկար',
-      'այլ նկարներ',
-      'այլ նկար',
-      'նոր նկարներ',
-      'նոր նկար',
-      'կրկին նկար',
-      'show as image',
-      'show a picture',
-      'generate image',
-      'draw this',
-      'make an image',
-      'another picture',
-      'more pictures',
-      'more images',
-    ];
-    for (final phrase in strips) {
-      extra = extra.replaceAll(
-        RegExp(RegExp.escape(phrase), caseSensitive: false),
-        ' ',
-      );
-    }
-    extra = extra.replaceAll(
-      RegExp(r'(^|[^\p{L}])նկար(ներ)?([^\p{L}]|$)', unicode: true),
-      r'$1$3',
-    );
-    extra = extra.replaceAll(RegExp(r'\s+'), ' ').trim();
-    return extra;
-  }
-
-  bool _isThinImageTopic(String text) {
-    final t = text.toLowerCase().trim();
-    if (t.length < 3) return true;
-    const thin = {
-      'էլի',
-      'ուրիշ',
-      'այլ',
-      'նորից',
-      'կրկին',
-      'please',
-      'more',
-      'again',
-      'another',
-    };
-    return thin.contains(t);
-  }
-
-  String _imageSearchPrompt(String request, List<_ChatItem> previous) {
-    final current = _stripImageVerbs(request);
-    if (current.isNotEmpty && !_isThinImageTopic(current)) {
-      return current.length > 280 ? current.substring(0, 280) : current;
-    }
-    for (final item in previous.reversed) {
-      if (item.role != 'user') continue;
-      final snippet = _stripImageVerbs(item.text);
-      if (snippet.isEmpty || _isThinImageTopic(snippet)) continue;
-      return snippet.length > 280 ? snippet.substring(0, 280) : snippet;
-    }
-    if (current.isNotEmpty) return current;
-    return request;
   }
 
   void _scrollToEnd() {
@@ -698,56 +355,6 @@ class _MessageBubble extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (item.imageBytes != null) ...[
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Image.memory(
-                    item.imageBytes!,
-                    fit: BoxFit.cover,
-                  ),
-                ),
-                if (item.text.isNotEmpty || item.imageUrls.isNotEmpty)
-                  const SizedBox(height: 8),
-              ],
-              for (var i = 0; i < item.imageUrls.length; i++) ...[
-                if (i > 0) const SizedBox(height: 10),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(14),
-                  child: AspectRatio(
-                    aspectRatio: i == 0 ? 4 / 3 : 16 / 10,
-                    child: Image.network(
-                      item.imageUrls[i],
-                      fit: BoxFit.cover,
-                      alignment: Alignment.center,
-                      filterQuality: FilterQuality.high,
-                      headers: const {
-                        'User-Agent':
-                            'AraratBible/1.0 (biblical education; image display)',
-                        'Accept': 'image/jpeg,image/png,image/webp,*/*',
-                      },
-                      loadingBuilder: (context, child, progress) {
-                        if (progress == null) return child;
-                        return ColoredBox(
-                          color: Colors.black12,
-                          child: const Center(
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                        );
-                      },
-                      errorBuilder: (_, __, ___) => const ColoredBox(
-                        color: Color(0x11000000),
-                        child: Center(
-                          child: Padding(
-                            padding: EdgeInsets.all(12),
-                            child: Text('Նկարը չբացվեց։'),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-              if (item.imageUrls.isNotEmpty) const SizedBox(height: 8),
               if (item.text.isNotEmpty)
                 SelectableText(
                   item.text,
@@ -775,10 +382,7 @@ class _MessageBubble extends StatelessWidget {
               if (!isUser && item.text.isNotEmpty)
                 Align(
                   alignment: Alignment.centerRight,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
+                  child: IconButton(
                     tooltip: 'Պատճենել',
                     iconSize: 18,
                     onPressed: () {
@@ -789,8 +393,6 @@ class _MessageBubble extends StatelessWidget {
                       );
                     },
                     icon: const Icon(Icons.copy),
-                      ),
-                    ],
                   ),
                 ),
             ],

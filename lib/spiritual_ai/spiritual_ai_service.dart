@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -18,14 +17,7 @@ class SpiritualAiReply {
   final String text;
   final List<BiblePassage> passages;
 
-  const SpiritualAiReply({required this.text, required this.passages});
-}
-
-class SpiritualAiImage {
-  final String? imageUrl;
-  final Uint8List? imageBytes;
-
-  const SpiritualAiImage({this.imageUrl, this.imageBytes});
+  const SpiritualAiReply({required this.text, this.passages = const []});
 }
 
 class SpiritualAiService {
@@ -52,17 +44,21 @@ class SpiritualAiService {
     final lookupText = followUp && searchQuery.trim().isNotEmpty
         ? searchQuery.trim()
         : trimmed;
-    final passages =
-        BibleContextRetriever.instance.passagesForQuestion(lookupText);
     final retriever = BibleContextRetriever.instance;
-    final lower = trimmed.toLowerCase();
-    final imageAsk = lower.contains('նկար') ||
-        lower.contains('գեներաց') ||
-        lower.contains('generate') ||
-        lower.contains('picture') ||
-        lower.contains('image');
+    if (retriever.looksLikeImageAsk(trimmed) &&
+        !retriever.isBibleRelated(trimmed)) {
+      return const SpiritualAiReply(
+        text: BibleContextRetriever.imagesOffReply,
+      );
+    }
+    if (!followUp && !retriever.isBibleRelated(trimmed)) {
+      return const SpiritualAiReply(
+        text: BibleContextRetriever.offTopicReply,
+      );
+    }
+    final passages = retriever.passagesForQuestion(lookupText);
     final quote = retriever.quoteExplicitReferences(trimmed);
-    if (!imageAsk && quote.matched && !retriever.wantsCommentary(trimmed)) {
+    if (quote.matched && !retriever.wantsCommentary(trimmed)) {
       return SpiritualAiReply(
         text: quote.text,
         passages: quote.passages,
@@ -71,7 +67,7 @@ class SpiritualAiService {
     final dumpVerses = !followUp
         ? retriever.wantsVerseOnly(trimmed)
         : retriever.wantsMoreVerses(trimmed);
-    if (!imageAsk && dumpVerses && !retriever.wantsCommentary(trimmed)) {
+    if (dumpVerses && !retriever.wantsCommentary(trimmed)) {
       if (passages.isNotEmpty) {
         return SpiritualAiReply(
           text: retriever.formatQuotedPassages(passages),
@@ -81,16 +77,16 @@ class SpiritualAiService {
     }
 
     var askMessage = trimmed;
-    if (!imageAsk && dumpVerses && passages.isEmpty) {
+    if (dumpVerses && passages.isEmpty) {
       askMessage =
           '$trimmed\n\n(Համակարգ. այս թեմայով հավելվածի Աստվածաշնչում համար չգտնվեց։ Համարներ մի հորինիր, բայց հարցին միևնույն է պատասխանիր հայերենով։)';
     }
-    if (!imageAsk && retriever.wantsIdentity(trimmed)) {
+    if (retriever.wantsIdentity(trimmed)) {
       askMessage =
           '$askMessage\n\n(Համակարգ. սա անձի հարց է։ Առաջին նախադասությամբ հստակ ասա՝ Աստվածաշնչում նա ով է։ Մի շփոթիր համանուն կամ պատահական համարի հետ։ Հովիվ ասելիս նկատի առ բարի հովիվը՝ Տերն ու Հիսուսը։ Եթե մի անունով մի քանի հայտնի անձ կա, կարճ նշիր գլխավորներին։ Համարներ մի հորինիր։)';
-    } else if (!imageAsk) {
+    } else {
       askMessage =
-          '$askMessage\n\n(Համակարգ. կարճ, հայերեն, ըստ Աստվածաշնչի, առանց փիլիսոփայության։)';
+          '$askMessage\n\n(Համակարգ. կարճ, հայերեն, ըստ Աստվածաշնչի, առանց փիլիսոփայության։ Եթե հարցը Աստվածաշնչի հետ կապ չունի, ասա այդպես և համար մի տուր։)';
     }
 
     final headers = <String, String>{
@@ -143,77 +139,6 @@ class SpiritualAiService {
       throw SpiritualAiException('Պատասխանը դատարկ էր։');
     }
     return SpiritualAiReply(text: text, passages: passages);
-  }
-
-  Future<SpiritualAiImage> generateImage({required String prompt}) async {
-    if (!SpiritualAiConfig.isConfigured) {
-      throw SpiritualAiException(
-        'Հոգևոր ԱԲ-ն դեռ կարգավորված չէ։ Backend URL-ը պետք է տրվի SPIRITUAL_AI_URL միջոցով։',
-      );
-    }
-
-    final trimmed = prompt.trim();
-    if (trimmed.isEmpty) {
-      throw SpiritualAiException('Խնդրում ենք գրել, թե ինչ նկար եք ուզում։');
-    }
-    if (trimmed.length > 800) {
-      throw SpiritualAiException('Նկարի նկարագրությունը չափազանց երկար է։');
-    }
-
-    final headers = <String, String>{
-      'Content-Type': 'application/json',
-    };
-    if (SpiritualAiConfig.gateSecret.isNotEmpty) {
-      headers['X-Spiritual-Ai-Gate'] = SpiritualAiConfig.gateSecret;
-    }
-
-    final uri = Uri.parse(SpiritualAiConfig.imageEndpoint);
-    final response = await http
-        .post(
-          uri,
-          headers: headers,
-          body: jsonEncode({'prompt': trimmed}),
-        )
-        .timeout(const Duration(seconds: 120));
-
-    if (response.statusCode == 429) {
-      throw SpiritualAiException(
-        'Շատ հարցումներ եղան։ Խնդրում ենք մի փոքր սպասել և նորից փորձել։',
-      );
-    }
-    if (response.statusCode == 401 || response.statusCode == 403) {
-      throw SpiritualAiException('Հարցումը մերժվեց սերվերի կողմից։');
-    }
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      final serverError = _serverError(response.body);
-      if (serverError == 'Image API is not configured') {
-        throw SpiritualAiException(
-          'Սերվերում նկարի API բանալին դրված չէ։ Render-ում ավելացրեք GEMINI_API_KEY։',
-        );
-      }
-      throw SpiritualAiException(
-        'Չհաջողվեց գեներացնել նկարը (${response.statusCode})։',
-      );
-    }
-
-    final decoded = jsonDecode(response.body);
-    if (decoded is! Map) {
-      throw SpiritualAiException('Սերվերը անսպասելի պատասխան տվեց։');
-    }
-    final imageUrl = decoded['imageUrl']?.toString().trim();
-    final b64 = decoded['imageBase64']?.toString().trim() ?? '';
-    Uint8List? bytes;
-    if (b64.isNotEmpty) {
-      try {
-        bytes = base64Decode(b64);
-      } catch (_) {
-        throw SpiritualAiException('Նկարը վնասված էր։');
-      }
-    }
-    if ((imageUrl == null || imageUrl.isEmpty) && bytes == null) {
-      throw SpiritualAiException('Նկարը դատարկ էր։');
-    }
-    return SpiritualAiImage(imageUrl: imageUrl, imageBytes: bytes);
   }
 
   String? _serverError(String body) {
