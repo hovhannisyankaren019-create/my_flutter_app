@@ -106,7 +106,7 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
           final lookup = await _historyLookup.findHistorical(prompt: topic);
           if (lookup.factsText.trim().isNotEmpty) {
             askText =
-                '$text\n\nԱղբյուրներ (պատմություն, ժամանակ, վայր — պատասխանիր սրանցով, թվեր մի հորինիր, միայն հայերենով).\n${lookup.factsText}';
+                '$text\n\nԱղբյուրներ (պատմություն, ժամանակ, վայր, ում համար է գրվել գիրքը և ինչու — պատասխանիր սրանցով, թվեր մի հորինիր, միայն հայերենով).\n${lookup.factsText}';
           }
           if (lookup.sources.isNotEmpty) {
             final buf = StringBuffer('Աղբյուրներ');
