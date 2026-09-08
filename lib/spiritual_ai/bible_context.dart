@@ -137,6 +137,11 @@ class BibleContextRetriever {
     'թեմա',
     'թեմայի',
     'խոսքեր',
+    'մարդ',
+    'մարդը',
+    'մարդու',
+    'անձ',
+    'անձը',
   };
 
   static const _synonyms = [
@@ -452,6 +457,199 @@ class BibleContextRetriever {
     ],
   ];
 
+  /// Canonical identifying verses for «ով է X». Do not use first keyword hit.
+  static const _people = <List<Object>>[
+    [
+      [
+        'հիսուս քրիստոս',
+        'յիսուս քրիստոս',
+        'հիսուսը',
+        'յիսուսը',
+        'հիսուս',
+        'յիսուս',
+        'քրիստոսը',
+        'քրիստոս',
+      ],
+      [
+        ['Յովհաննէս', 1, 29],
+        ['Մատթէոս', 16, 16],
+      ],
+    ],
+    [
+      [
+        'բարի հովիվ',
+        'բարի հովիւ',
+        'բարի հովվ',
+        'հովիվը',
+        'հովիւը',
+        'հովիվ',
+        'հովիւ',
+        'հոիվը',
+        'հոիվ',
+      ],
+      [
+        ['Յովհաննէս', 10, 11],
+        ['Սաղմոս', 23, 1],
+      ],
+    ],
+    [
+      ['հովհաննես մկրտիչ', 'յովհաննէս մկրտիչ', 'մկրտիչը', 'մկրտիչ'],
+      [
+        ['Մատթէոս', 3, 1],
+        ['Յովհաննէս', 1, 23],
+      ],
+    ],
+    [
+      ['մովսեսը', 'մովսէսը', 'մովսես', 'մովսէս'],
+      [
+        ['Ելից', 3, 10],
+        ['Երկրորդ Օրինաց', 34, 10],
+      ],
+    ],
+    [
+      ['դավիթը', 'դաւիթը', 'դավիթ', 'դաւիթ'],
+      [
+        ['Ա Թագաւորաց', 16, 13],
+        ['Բ Թագաւորաց', 5, 4],
+      ],
+    ],
+    [
+      ['աբրահամը', 'աբրահամ'],
+      [
+        ['Ծննդոց', 12, 1],
+        ['Ծննդոց', 17, 5],
+      ],
+    ],
+    [
+      ['նոյը', 'նոյ'],
+      [
+        ['Ծննդոց', 6, 9],
+      ],
+    ],
+    [
+      ['ադամը', 'ադամ'],
+      [
+        ['Ծննդոց', 2, 7],
+      ],
+    ],
+    [
+      ['ևան', 'եւան', 'եվան', 'եվա', 'ևա', 'եւա'],
+      [
+        ['Ծննդոց', 3, 20],
+      ],
+    ],
+    [
+      ['պողոսը', 'պօղոսը', 'պողոս', 'պօղոս', 'սավուղը', 'սաւուղը', 'սավուղ', 'սաւուղ'],
+      [
+        ['Գործք Առաքելոց', 9, 15],
+        ['Գործք Առաքելոց', 13, 9],
+      ],
+    ],
+    [
+      ['պետրոսը', 'պետրոս', 'սիմոն պետրոս'],
+      [
+        ['Մատթէոս', 16, 18],
+      ],
+    ],
+    [
+      ['մարիամը', 'մարիամ'],
+      [
+        ['Ղուկաս', 1, 27],
+      ],
+    ],
+    [
+      ['սողոմոնը', 'սողոմոն'],
+      [
+        ['Գ Թագաւորաց', 3, 5],
+      ],
+    ],
+    [
+      ['հովնանը', 'յովնանը', 'հովնան', 'յովնան'],
+      [
+        ['Յովնան', 1, 1],
+      ],
+    ],
+    [
+      ['դանիելը', 'դանիէլը', 'դանիել', 'դանիէլ'],
+      [
+        ['Դանիէլ', 1, 6],
+      ],
+    ],
+    [
+      ['հոբը', 'յոբը', 'հոբ', 'յոբ'],
+      [
+        ['Յոբ', 1, 1],
+      ],
+    ],
+    [
+      ['հեսուն', 'յեսուն', 'հեսու', 'յեսու'],
+      [
+        ['Յեսու', 1, 1],
+      ],
+    ],
+    [
+      ['իսահակը', 'իսահակ'],
+      [
+        ['Ծննդոց', 22, 2],
+      ],
+    ],
+    [
+      ['հակոբը', 'յակոբը', 'հակոբ', 'յակոբ'],
+      [
+        ['Ծննդոց', 32, 28],
+      ],
+    ],
+    [
+      ['հովսեփը', 'յովսէփը', 'հովսեփ', 'յովսէփ'],
+      [
+        ['Ծննդոց', 41, 41],
+        ['Մատթէոս', 1, 16],
+      ],
+    ],
+    [
+      ['եղիան', 'եղիա'],
+      [
+        ['Գ Թագաւորաց', 17, 1],
+      ],
+    ],
+    [
+      ['լազարոսը', 'լազարոս'],
+      [
+        ['Յովհաննէս', 11, 43],
+      ],
+    ],
+    [
+      ['պիղատոսը', 'պիղատոս'],
+      [
+        ['Մատթէոս', 27, 22],
+      ],
+    ],
+    [
+      ['հերովդեսը', 'հերովդէսը', 'հերովդես', 'հերովդէս'],
+      [
+        ['Մատթէոս', 2, 1],
+      ],
+    ],
+    [
+      ['կայենը', 'կայէնը', 'կայեն', 'կայէն'],
+      [
+        ['Ծննդոց', 4, 8],
+      ],
+    ],
+    [
+      ['հաբելը', 'հաբել'],
+      [
+        ['Ծննդոց', 4, 2],
+      ],
+    ],
+    [
+      ['հուդա իսկարիովտացի', 'յուդա իսկարիովտացի', 'իսկարիովտացի'],
+      [
+        ['Մատթէոս', 26, 14],
+      ],
+    ],
+  ];
+
   void ensureReady() {
     if (_index != null) return;
     _bookNames = _buildBookNames();
@@ -521,6 +719,9 @@ class BibleContextRetriever {
 
   List<BiblePassage> passagesForQuestion(String question, {int limit = 6}) {
     ensureReady();
+    if (wantsIdentity(question)) {
+      return _passagesFromPeople(question, limit: 4);
+    }
     final verseOnly = wantsVerseOnly(question);
     final cap = verseOnly ? 8 : limit;
     final found = <String, BiblePassage>{};
@@ -684,11 +885,78 @@ class BibleContextRetriever {
                 t.contains('նույն')));
   }
 
+  bool wantsIdentity(String question) {
+    final t = question.toLowerCase();
+    if (t.contains('որտեղ') ||
+        t.contains('գրված') ||
+        t.contains('գրուած') ||
+        t.contains('համարներ') ||
+        t.contains('հատվածներ') ||
+        t.contains('հատուածներ')) {
+      return false;
+    }
+    if (t.contains('ով է') ||
+        t.contains('ով էր') ||
+        t.contains('ով ա') ||
+        t.contains('ովա ') ||
+        t.contains('ո՞վ է') ||
+        t.contains('ով էս') ||
+        t.contains('ով էդ')) {
+      return true;
+    }
+    return t.contains('ինչ մարդ') ||
+        t.contains('որ մարդ') ||
+        t.contains('ինչպիսի մարդ');
+  }
+
+  String identitySubject(String question) {
+    var t = question.toLowerCase();
+    t = t.replaceAll(RegExp(r'[՞?!.,՝«»]'), ' ');
+    const strips = [
+      'ով էր',
+      'ով է',
+      'ով ա',
+      'ո վ է',
+      'ինչ մարդ է',
+      'ինչ մարդ',
+      'որ մարդն է',
+      'որ մարդը',
+      'աստվածաշնչում',
+      'աստուածաշնչում',
+    ];
+    for (final s in strips) {
+      t = t.replaceAll(s, ' ');
+    }
+    const junk = {
+      'այս',
+      'այն',
+      'էդ',
+      'էս',
+      'սա',
+      'դա',
+      'նա',
+      'մարդը',
+      'մարդ',
+      'անձը',
+      'անձ',
+    };
+    return t
+        .split(RegExp(r'\s+'))
+        .where((w) => w.length >= 2 && !junk.contains(w) && !_stopwords.contains(w))
+        .join(' ')
+        .trim();
+  }
+
   bool looksLikeFollowUp(String question, {required bool hasPriorTurn}) {
     if (!hasPriorTurn) return false;
     if (quoteExplicitReferences(question).matched) return false;
     final t = question.toLowerCase().trim();
     if (t.isEmpty) return false;
+    if (wantsIdentity(t)) {
+      final name = identitySubject(t);
+      if (name.length >= 3) return false;
+      return true;
+    }
     if (wantsMoreVerses(t)) return true;
     const cues = [
       'շարունակ',
@@ -731,7 +999,8 @@ class BibleContextRetriever {
     }
     return t.contains('մեկնաբան') ||
         t.contains('նշանակում') ||
-        t.contains('բացատր');
+        t.contains('բացատր') ||
+        wantsIdentity(question);
   }
 
   /// Quotes the in-app Ararat text for «Book chapter:verse». Never uses AI.
@@ -806,6 +1075,40 @@ class BibleContextRetriever {
           out.putIfAbsent(passage.ref, () => passage);
           if (out.length >= limit) return out.values.toList();
         }
+      }
+    }
+    return out.values.toList();
+  }
+
+  List<BiblePassage> _passagesFromPeople(String question, {required int limit}) {
+    final n = TransliterationHelper.normalizeForSearch(question);
+    if (n.isEmpty) return const [];
+    final out = <String, BiblePassage>{};
+    var bestLen = 0;
+    List? bestRefs;
+    for (final row in _people) {
+      final keys = (row[0] as List).cast<String>();
+      for (final key in keys) {
+        final kn = TransliterationHelper.normalizeForSearch(key);
+        if (kn.length < 3 || !n.contains(kn)) continue;
+        if (kn.length > bestLen) {
+          bestLen = kn.length;
+          bestRefs = row[1] as List;
+        }
+      }
+    }
+    if (bestRefs == null) return const [];
+    for (final ref in bestRefs) {
+      final item = (ref as List);
+      final found = _lookupRange(
+        book: item[0] as String,
+        chapter: item[1] as int,
+        startVerse: item[2] as int,
+        endVerse: item[2] as int,
+      );
+      for (final passage in found) {
+        out.putIfAbsent(passage.ref, () => passage);
+        if (out.length >= limit) return out.values.toList();
       }
     }
     return out.values.toList();

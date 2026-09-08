@@ -2,14 +2,33 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:audioplayers/audioplayers.dart';
-import 'package:flutter_tts/flutter_tts.dart';
 import 'package:http/http.dart' as http;
 
-/// Plays Armenian aloud. Never uses the phone's English/Russian TTS for հայերեն.
+/// Plays Armenian aloud via Google hy TTS, without device-voice effects.
 class ArmenianTts {
-  ArmenianTts(this._engine);
+  ArmenianTts() {
+    _player.setReleaseMode(ReleaseMode.stop);
+    _player.setVolume(1);
+    _player.setPlaybackRate(1);
+    unawaited(
+      _player.setAudioContext(
+        AudioContext(
+          android: const AudioContextAndroid(
+            isSpeakerphoneOn: false,
+            stayAwake: false,
+            contentType: AndroidContentType.speech,
+            usageType: AndroidUsageType.media,
+            audioFocus: AndroidAudioFocus.gain,
+          ),
+          iOS: AudioContextIOS(
+            category: AVAudioSessionCategory.playback,
+            options: const {AVAudioSessionOptions.defaultToSpeaker},
+          ),
+        ),
+      ),
+    );
+  }
 
-  final FlutterTts _engine;
   final AudioPlayer _player = AudioPlayer();
   Completer<void>? _chunkDone;
   bool _cancelled = false;
@@ -20,7 +39,6 @@ class ArmenianTts {
     final pending = _chunkDone;
     if (pending != null && !pending.isCompleted) pending.complete();
     _chunkDone = null;
-    await _engine.stop();
   }
 
   Future<void> speak(String text) async {
@@ -28,10 +46,8 @@ class ArmenianTts {
     if (spoken.isEmpty) return;
     _cancelled = false;
     await _player.stop();
-    await _engine.stop();
     _cancelled = false;
-
-    if (await _speakGoogleHy(spoken)) return;
+    await _speakGoogleHy(spoken);
   }
 
   Future<void> dispose() async {
@@ -118,9 +134,10 @@ class ArmenianTts {
     if (cleaned.isEmpty) return const [];
     final out = <String>[];
     var rest = cleaned;
-    while (rest.length > 160) {
-      var cut = rest.lastIndexOf(RegExp('[։.!?՝,]'), 160);
-      if (cut < 40) cut = 160;
+    while (rest.length > 180) {
+      var cut = rest.lastIndexOf(RegExp('[։.!?]'), 180);
+      if (cut < 50) cut = rest.lastIndexOf(' ', 180);
+      if (cut < 50) cut = 180;
       out.add(rest.substring(0, cut + 1).trim());
       rest = rest.substring(cut + 1).trim();
     }

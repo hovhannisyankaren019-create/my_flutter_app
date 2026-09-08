@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 
 import '../main.dart';
@@ -39,8 +38,7 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
   final _service = SpiritualAiService();
   final _imageService = SpiritualImageService();
   final _speech = SpeechToText();
-  final _tts = FlutterTts();
-  late final ArmenianTts _armenianTts = ArmenianTts(_tts);
+  final _armenianTts = ArmenianTts();
   final _messages = <_ChatItem>[];
   bool _sending = false;
   bool _indexReady = false;
