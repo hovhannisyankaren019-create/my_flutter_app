@@ -91,18 +91,6 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
         return;
       }
 
-      if (!followUp && !retriever.isBibleRelated(text)) {
-        setState(() {
-          _messages.add(
-            const _ChatItem(
-              role: 'assistant',
-              text: BibleContextRetriever.offTopicReply,
-            ),
-          );
-        });
-        return;
-      }
-
       final searchQuery = followUp ? _searchContext(text, previous) : text;
       final history = _apiHistory(previous, followUp: followUp);
       final reply = await _service.ask(

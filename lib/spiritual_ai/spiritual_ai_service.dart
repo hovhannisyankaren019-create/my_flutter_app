@@ -51,11 +51,6 @@ class SpiritualAiService {
         text: BibleContextRetriever.imagesOffReply,
       );
     }
-    if (!followUp && !retriever.isBibleRelated(trimmed)) {
-      return const SpiritualAiReply(
-        text: BibleContextRetriever.offTopicReply,
-      );
-    }
     final passages = retriever.passagesForQuestion(lookupText);
     final quote = retriever.quoteExplicitReferences(trimmed);
     if (quote.matched && !retriever.wantsCommentary(trimmed)) {
@@ -86,7 +81,7 @@ class SpiritualAiService {
           '$askMessage\n\n(Համակարգ. սա անձի հարց է։ Առաջին նախադասությամբ հստակ ասա՝ Աստվածաշնչում նա ով է։ Մի շփոթիր համանուն կամ պատահական համարի հետ։ Հովիվ ասելիս նկատի առ բարի հովիվը՝ Տերն ու Հիսուսը։ Եթե մի անունով մի քանի հայտնի անձ կա, կարճ նշիր գլխավորներին։ Համարներ մի հորինիր։)';
     } else {
       askMessage =
-          '$askMessage\n\n(Համակարգ. կարճ, հայերեն, ըստ Աստվածաշնչի, առանց փիլիսոփայության։ Եթե հարցը Աստվածաշնչի հետ կապ չունի, ասա այդպես և համար մի տուր։)';
+          '$askMessage\n\n(Համակարգ. կարճ, հայերեն, ըստ Աստվածաշնչի։ Եթե հարցը կարելի է պատասխանել Աստվածաշնչով, պատասխանիր. մի ասա թե կապ չունի։ Միայն ակնհայտ աշխարհիկ բաներին ասա, որ կապ չունի, և համար մի տուր։)';
     }
 
     final headers = <String, String>{
