@@ -45,9 +45,5 @@
 		<true/>
 		<key>UIApplicationSupportsIndirectInputEvents</key>
 		<true/>
-		<key>NSMicrophoneUsageDescription</key>
-		<string>Հարցը ձայնով ասելու համար։</string>
-		<key>NSSpeechRecognitionUsageDescription</key>
-		<string>Ձեր խոսքը տեքստ դարձնելու համար, որ Հոգևոր ԱԲ-ին հարցնեք։</string>
 	</dict>
 </plist>

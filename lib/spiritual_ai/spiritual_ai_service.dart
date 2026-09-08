@@ -49,8 +49,9 @@ class SpiritualAiService {
       throw SpiritualAiException('Հարցը չափազանց երկար է։');
     }
 
-    final lookupText =
-        searchQuery.trim().isNotEmpty ? searchQuery.trim() : trimmed;
+    final lookupText = followUp && searchQuery.trim().isNotEmpty
+        ? searchQuery.trim()
+        : trimmed;
     final passages =
         BibleContextRetriever.instance.passagesForQuestion(lookupText);
     final retriever = BibleContextRetriever.instance;

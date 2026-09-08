@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:speech_to_text/speech_to_text.dart';
 
 import '../main.dart';
 import '../spiritual_image/spiritual_image_service.dart';
-import 'armenian_tts.dart';
 import 'bible_context.dart';
 import 'spiritual_ai_config.dart';
 import 'spiritual_ai_service.dart';
@@ -37,15 +35,9 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
   final _scrollController = ScrollController();
   final _service = SpiritualAiService();
   final _imageService = SpiritualImageService();
-  final _speech = SpeechToText();
-  final _armenianTts = ArmenianTts();
   final _messages = <_ChatItem>[];
   bool _sending = false;
   bool _indexReady = false;
-  bool _listening = false;
-  bool _speaking = false;
-  _ChatItem? _speakingItem;
-  String _speechLocale = 'hy-AM';
 
   @override
   void initState() {
@@ -53,39 +45,11 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       BibleContextRetriever.instance.ensureReady();
       if (mounted) setState(() => _indexReady = true);
-      _initSpeech();
     });
-  }
-
-  Future<void> _initSpeech() async {
-    await _speech.initialize(
-      onStatus: (status) {
-        if (!mounted) return;
-        if (status == 'done' || status == 'notListening') {
-          setState(() => _listening = false);
-        }
-      },
-      onError: (_) {
-        if (!mounted) return;
-        setState(() => _listening = false);
-      },
-    );
-    try {
-      final locales = await _speech.locales();
-      for (final locale in locales) {
-        final id = locale.localeId.toLowerCase().replaceAll('_', '-');
-        if (id == 'hy-am' || id.startsWith('hy')) {
-          _speechLocale = locale.localeId;
-          break;
-        }
-      }
-    } catch (_) {}
   }
 
   @override
   void dispose() {
-    _speech.stop();
-    _armenianTts.dispose();
     _controller.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -96,12 +60,7 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
     final text = (preset ?? _controller.text).trim();
     if (text.isEmpty) return;
 
-    await _speech.stop();
-    await _armenianTts.stop();
     setState(() {
-      _listening = false;
-      _speaking = false;
-      _speakingItem = null;
       _sending = true;
       _messages.add(_ChatItem(role: 'user', text: text));
       _controller.clear();
@@ -112,12 +71,20 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
       final retriever = BibleContextRetriever.instance;
       retriever.ensureReady();
       final previous = _messages.sublist(0, _messages.length - 1);
+      var lastUserText = '';
+      for (final item in previous.reversed) {
+        if (item.role == 'user') {
+          lastUserText = item.text;
+          break;
+        }
+      }
       final followUp = retriever.looksLikeFollowUp(
         text,
         hasPriorTurn: previous.any((item) => item.role == 'assistant'),
+        previousUser: lastUserText,
       );
       final searchQuery = followUp ? _searchContext(text, previous) : text;
-      final history = _apiHistory(previous);
+      final history = _apiHistory(previous, followUp: followUp);
       final treatAsVerseQuote = !retriever.wantsCommentary(text) &&
           !_isImageRequest(text) &&
           (retriever.quoteExplicitReferences(text).matched ||
@@ -285,9 +252,27 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
     }
   }
 
-  List<Map<String, String>> _apiHistory(List<_ChatItem> previous) {
+  List<Map<String, String>> _apiHistory(
+    List<_ChatItem> previous, {
+    required bool followUp,
+  }) {
+    final usable = <_ChatItem>[];
+    for (var i = 0; i < previous.length; i++) {
+      final item = previous[i];
+      if (!followUp &&
+          item.role == 'user' &&
+          BibleContextRetriever.instance
+              .quoteExplicitReferences(item.text)
+              .matched) {
+        if (i + 1 < previous.length && previous[i + 1].role == 'assistant') {
+          i++;
+        }
+        continue;
+      }
+      usable.add(item);
+    }
     final turns = <Map<String, String>>[
-      for (final item in previous)
+      for (final item in usable)
         if (item.text.trim().isNotEmpty)
           {
             'role': item.role,
@@ -551,98 +536,6 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
     return request;
   }
 
-  String _speechText(String text) {
-    var cleaned = text.replaceAll(RegExp(r'https?://\S+'), ' ');
-    final sourcesAt = cleaned.indexOf('Աղբյուրներ');
-    if (sourcesAt > 0) cleaned = cleaned.substring(0, sourcesAt);
-    return cleaned.replaceAll(RegExp(r'\s+'), ' ').trim();
-  }
-
-  Future<void> _toggleListen() async {
-    if (_sending) return;
-    if (_listening) {
-      await _speech.stop();
-      if (mounted) setState(() => _listening = false);
-      return;
-    }
-    await _armenianTts.stop();
-    final available = await _speech.initialize();
-    if (!available) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Միկրոֆոնի թույլտվություն է պետք հայերեն հարց ասելու համար։',
-          ),
-        ),
-      );
-      return;
-    }
-    setState(() {
-      _speaking = false;
-      _speakingItem = null;
-      _listening = true;
-    });
-    await _speech.listen(
-      onResult: (result) {
-        if (!mounted) return;
-        _controller.value = TextEditingValue(
-          text: result.recognizedWords,
-          selection: TextSelection.collapsed(
-            offset: result.recognizedWords.length,
-          ),
-        );
-        if (result.finalResult) {
-          setState(() => _listening = false);
-          final spoken = result.recognizedWords.trim();
-          if (spoken.isNotEmpty) _send(spoken);
-        }
-      },
-      listenOptions: SpeechListenOptions(
-        localeId: _speechLocale,
-        listenFor: const Duration(seconds: 25),
-        pauseFor: const Duration(seconds: 3),
-        partialResults: true,
-        cancelOnError: true,
-        onDevice: false,
-        listenMode: ListenMode.dictation,
-      ),
-    );
-  }
-
-  Future<void> _speak(_ChatItem item) async {
-    final spoken = _speechText(item.text);
-    if (spoken.isEmpty) return;
-    if (_speaking && identical(_speakingItem, item)) {
-      await _armenianTts.stop();
-      if (mounted) {
-        setState(() {
-          _speaking = false;
-          _speakingItem = null;
-        });
-      }
-      return;
-    }
-    await _speech.stop();
-    if (mounted) {
-      setState(() {
-        _listening = false;
-        _speaking = true;
-        _speakingItem = item;
-      });
-    }
-    try {
-      await _armenianTts.speak(spoken);
-    } finally {
-      if (mounted) {
-        setState(() {
-          _speaking = false;
-          _speakingItem = null;
-        });
-      }
-    }
-  }
-
   void _scrollToEnd() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scrollController.hasClients) return;
@@ -692,10 +585,6 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
                     mineColor: bubbleMine,
                     aiColor: bubbleAi,
                     isDark: isDark,
-                    speaking: identical(_speakingItem, item),
-                    onSpeak: item.role == 'assistant' && item.text.isNotEmpty
-                        ? () => _speak(item)
-                        : null,
                   ),
                 if (_sending)
                   Padding(
@@ -741,9 +630,7 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
                       decoration: InputDecoration(
                         hintText: !_indexReady
                             ? 'Բեռնվում է Աստվածաշնչի տեքստը...'
-                            : (_listening
-                                ? 'Լսում եմ հայերեն...'
-                                : 'Գրեք կամ ասեք հայերեն...'),
+                            : 'Գրեք հայերեն հարցը...',
                         hintStyle: TextStyle(
                           color: Colors.grey[600],
                           fontSize: 16,
@@ -759,16 +646,6 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
                           vertical: 12,
                         ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  IconButton(
-                    tooltip: _listening ? 'Կանգնեցնել' : 'Ասել հարցը',
-                    onPressed:
-                        _indexReady && !_sending ? _toggleListen : null,
-                    icon: Icon(
-                      _listening ? Icons.stop_circle : Icons.mic,
-                      color: _listening ? Colors.red : Colors.grey[800],
                     ),
                   ),
                   IconButton.filled(
@@ -794,16 +671,12 @@ class _MessageBubble extends StatelessWidget {
   final Color mineColor;
   final Color aiColor;
   final bool isDark;
-  final bool speaking;
-  final VoidCallback? onSpeak;
 
   const _MessageBubble({
     required this.item,
     required this.mineColor,
     required this.aiColor,
     required this.isDark,
-    this.speaking = false,
-    this.onSpeak,
   });
 
   @override
@@ -905,15 +778,6 @@ class _MessageBubble extends StatelessWidget {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      if (onSpeak != null)
-                        IconButton(
-                          tooltip: speaking ? 'Կանգնեցնել' : 'Լսել',
-                          iconSize: 20,
-                          onPressed: onSpeak,
-                          icon: Icon(
-                            speaking ? Icons.stop : Icons.volume_up,
-                          ),
-                        ),
                       IconButton(
                     tooltip: 'Պատճենել',
                     iconSize: 18,

@@ -947,7 +947,11 @@ class BibleContextRetriever {
         .trim();
   }
 
-  bool looksLikeFollowUp(String question, {required bool hasPriorTurn}) {
+  bool looksLikeFollowUp(
+    String question, {
+    required bool hasPriorTurn,
+    String previousUser = '',
+  }) {
     if (!hasPriorTurn) return false;
     if (quoteExplicitReferences(question).matched) return false;
     final t = question.toLowerCase().trim();
@@ -955,8 +959,29 @@ class BibleContextRetriever {
     if (wantsIdentity(t)) {
       final name = identitySubject(t);
       if (name.length >= 3) return false;
-      return true;
     }
+    if (wantsLocateVerse(t)) return false;
+    if (wantsVerseOnly(t) && !wantsMoreVerses(t)) return false;
+
+    final verseFollow = t.contains('շարունակ') ||
+        t.contains('էլի') ||
+        t.contains('բացատր') ||
+        t.contains('մեկնաբան') ||
+        t.contains('նշանակում') ||
+        t.contains('այդ համար') ||
+        t.contains('այս համար') ||
+        t.contains('էդ համար') ||
+        t.contains('դրա') ||
+        t.contains('նրա') ||
+        t.contains('ինչու') ||
+        t.contains('ինչի') ||
+        wantsMoreVerses(t);
+
+    if (previousUser.trim().isNotEmpty &&
+        quoteExplicitReferences(previousUser).matched) {
+      return verseFollow;
+    }
+
     if (wantsMoreVerses(t)) return true;
     const cues = [
       'շարունակ',
@@ -981,12 +1006,7 @@ class BibleContextRetriever {
       'նկարով',
       'պատկեր',
     ];
-    if (cues.any(t.contains)) return true;
-    final topicalNew = t.contains('մասին') &&
-        (t.contains('համարներ տուր') || t.contains('հատվածներ տուր'));
-    if (topicalNew) return false;
-    final words = t.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length;
-    return words <= 8;
+    return cues.any(t.contains);
   }
 
   bool wantsCommentary(String question) {
