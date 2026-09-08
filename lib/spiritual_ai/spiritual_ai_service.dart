@@ -53,7 +53,9 @@ class SpiritualAiService {
     }
     final passages = retriever.passagesForQuestion(lookupText);
     final quote = retriever.quoteExplicitReferences(trimmed);
-    if (quote.matched && !retriever.wantsCommentary(trimmed)) {
+    if (quote.matched &&
+        !retriever.wantsCommentary(trimmed) &&
+        !retriever.wantsHistoricalFacts(trimmed)) {
       return SpiritualAiReply(
         text: quote.text,
         passages: quote.passages,
@@ -62,7 +64,9 @@ class SpiritualAiService {
     final dumpVerses = !followUp
         ? retriever.wantsVerseOnly(trimmed)
         : retriever.wantsMoreVerses(trimmed);
-    if (dumpVerses && !retriever.wantsCommentary(trimmed)) {
+    if (dumpVerses &&
+        !retriever.wantsCommentary(trimmed) &&
+        !retriever.wantsHistoricalFacts(trimmed)) {
       if (passages.isNotEmpty) {
         return SpiritualAiReply(
           text: retriever.formatQuotedPassages(passages),
@@ -76,7 +80,10 @@ class SpiritualAiService {
       askMessage =
           '$trimmed\n\n(Համակարգ. այս թեմայով հավելվածի Աստվածաշնչում համար չգտնվեց։ Համարներ մի հորինիր, բայց հարցին միևնույն է պատասխանիր հայերենով։)';
     }
-    if (retriever.wantsIdentity(trimmed)) {
+    if (retriever.wantsHistoricalFacts(trimmed)) {
+      askMessage =
+          '$askMessage\n\n(Համակարգ. օգտատերը ուզում է պատմական տվյալներ։ Հայերենով կարճ ասա ժամանակը, վայրը և ինչ է եղել։ Թվեր մի հորինիր։ Անգլերեն բառ մի գրիր։ Նկար մի խոստացիր։)';
+    } else if (retriever.wantsIdentity(trimmed)) {
       askMessage =
           '$askMessage\n\n(Համակարգ. սա անձի հարց է։ Առաջին նախադասությամբ հստակ ասա՝ Աստվածաշնչում նա ով է։ Մի շփոթիր համանուն կամ պատահական համարի հետ։ Հովիվ ասելիս նկատի առ բարի հովիվը՝ Տերն ու Հիսուսը։ Եթե մի անունով մի քանի հայտնի անձ կա, կարճ նշիր գլխավորներին։ Համարներ մի հորինիր։)';
     } else {

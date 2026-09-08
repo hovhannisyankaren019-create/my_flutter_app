@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../main.dart';
+import '../spiritual_image/spiritual_image_service.dart';
 import 'bible_context.dart';
 import 'spiritual_ai_config.dart';
 import 'spiritual_ai_service.dart';
@@ -29,6 +30,7 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
   final _service = SpiritualAiService();
+  final _historyLookup = SpiritualImageService();
   final _messages = <_ChatItem>[];
   bool _sending = false;
   bool _indexReady = false;
@@ -77,9 +79,8 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
         hasPriorTurn: previous.any((item) => item.role == 'assistant'),
         previousUser: lastUserText,
       );
-
-      if (retriever.looksLikeImageAsk(text) &&
-          !retriever.isBibleRelated(text)) {
+      final wantsHistory = retriever.wantsHistoricalFacts(text);
+      if (retriever.looksLikeImageAsk(text) && !wantsHistory) {
         setState(() {
           _messages.add(
             const _ChatItem(
@@ -90,21 +91,52 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
         });
         return;
       }
+      final searchQuery =
+          (followUp || wantsHistory) ? _searchContext(text, previous) : text;
+      final history = _apiHistory(
+        previous,
+        followUp: followUp || wantsHistory,
+      );
 
-      final searchQuery = followUp ? _searchContext(text, previous) : text;
-      final history = _apiHistory(previous, followUp: followUp);
+      var askText = text;
+      var sourceLines = '';
+      if (wantsHistory) {
+        final topic = _historicalTopic(text, previous);
+        try {
+          final lookup = await _historyLookup.findHistorical(prompt: topic);
+          if (lookup.factsText.trim().isNotEmpty) {
+            askText =
+                '$text\n\nԱղբյուրներ (պատմություն, ժամանակ, վայր — պատասխանիր սրանցով, թվեր մի հորինիր, միայն հայերենով).\n${lookup.factsText}';
+          }
+          if (lookup.sources.isNotEmpty) {
+            final buf = StringBuffer('Աղբյուրներ');
+            for (final source in lookup.sources.take(4)) {
+              final name =
+                  source.source.isNotEmpty ? source.source : source.title;
+              buf.writeln();
+              buf.write('• $name: ${source.url}');
+            }
+            sourceLines = buf.toString();
+          }
+        } catch (_) {}
+      }
+
       final reply = await _service.ask(
-        message: text,
+        message: askText,
         history: history,
-        followUp: followUp,
+        followUp: followUp || wantsHistory,
         searchQuery: searchQuery,
       );
       if (!mounted) return;
+      final body = [
+        reply.text.trim(),
+        if (sourceLines.isNotEmpty) sourceLines,
+      ].where((part) => part.isNotEmpty).join('\n\n');
       setState(() {
         _messages.add(
           _ChatItem(
             role: 'assistant',
-            text: reply.text,
+            text: body,
             passages: reply.passages,
           ),
         );
@@ -179,6 +211,57 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
     return [lastOf('user'), lastOf('assistant'), text]
         .where((part) => part.isNotEmpty)
         .join('\n');
+  }
+
+  String _historicalTopic(String request, List<_ChatItem> previous) {
+    var extra = request.toLowerCase();
+    const strips = [
+      'պատմական տվյալներ տուր',
+      'պատմական տվյալներ տուր',
+      'պատմական տվյալներ',
+      'պատմական տուեալներ',
+      'պատմական տվյալ',
+      'պատմություն տուր',
+      'պատմութիւն տուր',
+      'տուր պատմական',
+      'պատմական',
+      'տվյալներ տուր',
+      'տուեալներ տուր',
+      'տվյալներ',
+      'ժամանակաշրջան',
+      'թվականներ',
+      'թվական',
+    ];
+    for (final s in strips) {
+      extra = extra.replaceAll(s, ' ');
+    }
+    extra = extra.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (extra.length >= 3) {
+      return extra.length > 280 ? extra.substring(0, 280) : extra;
+    }
+    for (final item in previous.reversed) {
+      if (item.role != 'user') continue;
+      if (BibleContextRetriever.instance.wantsHistoricalFacts(item.text) &&
+          _stripHistoricalAsk(item.text).length < 3) {
+        continue;
+      }
+      final snippet = _stripHistoricalAsk(item.text);
+      if (snippet.length < 3) continue;
+      return snippet.length > 280 ? snippet.substring(0, 280) : snippet;
+    }
+    return request;
+  }
+
+  String _stripHistoricalAsk(String text) {
+    var extra = text.toLowerCase();
+    for (final s in [
+      'պատմական տվյալներ տուր',
+      'պատմական տվյալներ',
+      'պատմական',
+    ]) {
+      extra = extra.replaceAll(s, ' ');
+    }
+    return extra.replaceAll(RegExp(r'\s+'), ' ').trim();
   }
 
   void _scrollToEnd() {

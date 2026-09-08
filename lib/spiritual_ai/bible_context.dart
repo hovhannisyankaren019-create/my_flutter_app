@@ -1045,6 +1045,7 @@ class BibleContextRetriever {
       return false;
     }
     if (wantsLocateVerse(t)) return false;
+    if (wantsHistoricalFacts(t)) return true;
     if (wantsVerseOnly(t) && !wantsMoreVerses(t)) return false;
 
     final verseFollow = t.contains('շարունակ') ||
@@ -1063,7 +1064,7 @@ class BibleContextRetriever {
 
     if (previousUser.trim().isNotEmpty &&
         quoteExplicitReferences(previousUser).matched) {
-      return verseFollow;
+      return verseFollow || wantsHistoricalFacts(t);
     }
 
     if (wantsMoreVerses(t)) return true;
@@ -1089,8 +1090,42 @@ class BibleContextRetriever {
       'նկատի',
       'նկարով',
       'պատկեր',
+      'պատմական',
+      'պատմություն',
+      'պատմութիւն',
+      'տվյալ',
+      'տուեալ',
+      'ժամանակաշրջան',
+      'թվական',
     ];
+    if (wantsHistoricalFacts(t)) return true;
     return cues.any(t.contains);
+  }
+
+  bool wantsHistoricalFacts(String question) {
+    final t = question.toLowerCase();
+    if (t.contains('նկար') &&
+        !t.contains('պատմական') &&
+        !t.contains('տվյալ') &&
+        !t.contains('տուեալ')) {
+      return false;
+    }
+    return t.contains('պատմական') ||
+        t.contains('պատմություն') ||
+        t.contains('պատմութիւն') ||
+        t.contains('ժամանակաշրջան') ||
+        t.contains('թվական') ||
+        t.contains('որ դարում') ||
+        t.contains('երբ է եղել') ||
+        t.contains('երբ էր եղել') ||
+        t.contains('հնագիտ') ||
+        t.contains('մ.թ.ա') ||
+        t.contains('մթա') ||
+        ((t.contains('տվյալ') || t.contains('տուեալ')) &&
+            (t.contains('տուր') ||
+                t.contains('տա') ||
+                t.contains('ասա') ||
+                t.contains('պատմ')));
   }
 
   bool wantsCommentary(String question) {
