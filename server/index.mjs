@@ -1,6 +1,7 @@
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 import {fileURLToPath} from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -132,6 +133,118 @@ async function saveVerseOfDay({text, reference}) {
     const detail = await res.text();
     throw new Error(detail || `firestore_${res.status}`);
   }
+}
+
+function b64url(value) {
+  const buf = Buffer.isBuffer(value) ? value : Buffer.from(value);
+  return buf.toString("base64").replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+}
+
+function serviceAccountFromEnv() {
+  const raw = process.env.FIREBASE_SERVICE_ACCOUNT || "";
+  if (!raw.trim()) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+async function firebaseMessagingToken(sa) {
+  const now = Math.floor(Date.now() / 1000);
+  const header = b64url(JSON.stringify({alg: "RS256", typ: "JWT"}));
+  const payload = b64url(
+    JSON.stringify({
+      iss: sa.client_email,
+      scope: "https://www.googleapis.com/auth/firebase.messaging",
+      aud: "https://oauth2.googleapis.com/token",
+      iat: now,
+      exp: now + 3600,
+    }),
+  );
+  const signer = crypto.createSign("RSA-SHA256");
+  signer.update(`${header}.${payload}`);
+  const jwt = `${header}.${payload}.${b64url(signer.sign(sa.private_key))}`;
+  const res = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: {"Content-Type": "application/x-www-form-urlencoded"},
+    body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
+  });
+  const data = await res.json();
+  if (!data.access_token) {
+    throw new Error(data.error_description || "fcm_token");
+  }
+  return data.access_token;
+}
+
+async function sendVerseNotification({text, reference}) {
+  const title = "Օրվա Խոսքը";
+  const body = reference ? `${reference}\n${text}` : text;
+  const shortBody = body.length > 240 ? `${body.slice(0, 237)}...` : body;
+  const projectId = process.env.FIREBASE_PROJECT_ID || "spiritual-ai-414c4";
+  const sa = serviceAccountFromEnv();
+  if (sa?.client_email && sa?.private_key) {
+    const accessToken = await firebaseMessagingToken(sa);
+    const res = await fetch(
+      `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message: {
+            topic: "all_users",
+            notification: {title, body: shortBody},
+            data: {
+              type: "verse_of_day",
+              text,
+              reference: reference || "",
+            },
+            android: {
+              priority: "high",
+              notification: {
+                channel_id: "high_importance_channel",
+              },
+            },
+          },
+        }),
+      },
+    );
+    if (!res.ok) {
+      throw new Error(await res.text());
+    }
+    return "fcm";
+  }
+
+  const serverKey = process.env.FCM_SERVER_KEY || "";
+  if (serverKey) {
+    const res = await fetch("https://fcm.googleapis.com/fcm/send", {
+      method: "POST",
+      headers: {
+        Authorization: `key=${serverKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        to: "/topics/all_users",
+        priority: "high",
+        notification: {title, body: shortBody},
+        data: {
+          type: "verse_of_day",
+          text,
+          reference: reference || "",
+        },
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === 0) {
+      throw new Error(JSON.stringify(data));
+    }
+    return "legacy";
+  }
+
+  throw new Error("no_push_key");
 }
 
 function parseTeacherIds(text) {
@@ -759,11 +872,22 @@ async function handleTelegram(req, res, body) {
     }
     try {
       await saveVerseOfDay(parsed);
+      let pushNote = "";
+      try {
+        await sendVerseNotification(parsed);
+        pushNote = " Հաղորդագրությունը ուղարկվեց հեռախոսներին։";
+      } catch (pushError) {
+        console.error(pushError);
+        pushNote =
+          pushError.message === "no_push_key"
+            ? " Խոսքը պահվեց, բայց notification չգնաց. Render-ում դրեք FIREBASE_SERVICE_ACCOUNT։"
+            : " Խոսքը պահվեց, բայց notification չգնաց։";
+      }
       await sendTelegram(
         chatId,
         parsed.reference
-          ? `Օրվա Խոսքը թարմացվեց։\n${parsed.reference}`
-          : "Օրվա Խոսքը թարմացվեց։ Հավելվածում հիմա կերևա։",
+          ? `Օրվա Խոսքը թարմացվեց։\n${parsed.reference}${pushNote}`
+          : `Օրվա Խոսքը թարմացվեց։${pushNote}`,
       );
     } catch (error) {
       console.error(error);

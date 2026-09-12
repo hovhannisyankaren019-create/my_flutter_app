@@ -50,7 +50,7 @@ OpenAI բանալին այստեղ է, ոչ թե հավելվածում։ Սեր
 Քանզի այնպես սիրեց Աստված աշխարհը...
 ```
 
-Հավելվածում խոսքը միանգամից կթարմանա։ Firestore-ում `verseOfDay/today` փաստաթղթի write-ը պետք է թույլատրված լինի։
+Հավելվածում խոսքը միանգամից կթարմանա, և հեռախոսներին կգա notification, եթե Render-ում դրված է `FIREBASE_SERVICE_ACCOUNT` (Firebase → Project settings → Service accounts → Generate new private key, ամբողջ JSON-ը մեկ Environment փոփոխական)։ Firestore-ում `verseOfDay/today` փաստաթղթի write-ը պետք է թույլատրված լինի։
 
 ### Սովորեցնել Telegram-ից
 
