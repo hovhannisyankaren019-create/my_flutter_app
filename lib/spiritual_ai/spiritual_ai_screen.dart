@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../firebase/chat_firestore_service.dart';
+import '../firebase/chat_history_screen.dart';
+import '../firebase/firebase_auth_service.dart';
 import '../main.dart';
 import '../spiritual_image/spiritual_image_service.dart';
 import 'bible_context.dart';
@@ -8,7 +11,14 @@ import 'spiritual_ai_config.dart';
 import 'spiritual_ai_service.dart';
 
 class SpiritualAiScreen extends StatefulWidget {
-  const SpiritualAiScreen({super.key});
+  final String? chatId;
+  final bool isGuest;
+
+  const SpiritualAiScreen({
+    super.key,
+    this.chatId,
+    this.isGuest = false,
+  });
 
   @override
   State<SpiritualAiScreen> createState() => _SpiritualAiScreenState();
@@ -26,7 +36,10 @@ class _ChatItem {
   });
 }
 
+final FirebaseAuthService _authService = FirebaseAuthService();
+
 class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
+  bool get _isGuest => widget.isGuest;
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
   final _service = SpiritualAiService();
@@ -34,12 +47,22 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
   final _messages = <_ChatItem>[];
   bool _sending = false;
   bool _indexReady = false;
+  ChatFirestoreService? _chatFirestoreService;
+  String? _chatId;
+
+  ChatFirestoreService get _chats {
+    return _chatFirestoreService ??= ChatFirestoreService();
+  }
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    _chatId = widget.chatId;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       BibleContextRetriever.instance.ensureReady();
+      if (_chatId != null) {
+        await _loadChatMessages();
+      }
       if (mounted) setState(() => _indexReady = true);
     });
   }
@@ -56,11 +79,31 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
     final text = (preset ?? _controller.text).trim();
     if (text.isEmpty) return;
 
+    if (!_isGuest && _chatId == null) {
+      try {
+        final chatId = await _chats.createChat(
+          title: text.length > 40 ? '${text.substring(0, 40)}...' : text,
+        );
+        _chatId = chatId;
+      } catch (_) {
+        // Firebase-ի սխալը չպետք է կանգնեցնի ԱԲ-ի աշխատանքը
+      }
+    }
+
     setState(() {
       _sending = true;
       _messages.add(_ChatItem(role: 'user', text: text));
       _controller.clear();
     });
+    if (!_isGuest && _chatId != null) {
+      try {
+        await _chats.saveMessage(
+          chatId: _chatId!,
+          text: text,
+          role: 'user',
+        );
+      } catch (_) {}
+    }
     _scrollToEnd();
 
     try {
@@ -141,6 +184,15 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
           ),
         );
       });
+      if (!_isGuest && _chatId != null) {
+        try {
+          await _chats.saveMessage(
+            chatId: _chatId!,
+            text: body,
+            role: 'assistant',
+          );
+        } catch (_) {}
+      }
     } on SpiritualAiException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -264,6 +316,40 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
     return extra.replaceAll(RegExp(r'\s+'), ' ').trim();
   }
 
+  Future<void> _loadChatMessages() async {
+    if (_chatId == null) return;
+
+    try {
+      final snapshot =
+          await _chats.streamMessages(_chatId!).first;
+
+      final loadedMessages = <_ChatItem>[];
+
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+        final role = data['role'] as String? ?? 'assistant';
+        final text = data['text'] as String? ?? '';
+        if (text.isEmpty) continue;
+        loadedMessages.add(
+          _ChatItem(
+            role: role,
+            text: text,
+          ),
+        );
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _messages
+          ..clear()
+          ..addAll(loadedMessages);
+      });
+      _scrollToEnd();
+    } catch (e) {
+      debugPrint('Error loading chat messages: $e');
+    }
+  }
+
   void _scrollToEnd() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scrollController.hasClients) return;
@@ -286,8 +372,43 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
         title: const Text('Հոգևոր ԱԲ'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () {
+            Navigator.popUntil(context, (route) => route.isFirst);
+          },
         ),
+        actions: [
+          if (!_isGuest)
+            IconButton(
+              tooltip: 'Նախորդ զրույցներ',
+              icon: const Icon(
+                Icons.history,
+                color: Colors.white,
+              ),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const ChatHistoryScreen(),
+                  ),
+                );
+              },
+            ),
+          if (!_isGuest)
+            IconButton(
+              tooltip: 'Դուրս գալ',
+              icon: const Icon(
+                Icons.logout,
+                color: Colors.white,
+              ),
+              onPressed: () async {
+                try {
+                  await _authService.logout();
+                } catch (_) {}
+                if (!context.mounted) return;
+                Navigator.popUntil(context, (route) => route.isFirst);
+              },
+            ),
+        ],
       ),
       body: Column(
         children: [

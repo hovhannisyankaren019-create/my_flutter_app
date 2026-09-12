@@ -5,15 +5,31 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'dart:async';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'dart:math' as math;
 
+import 'firebase_options.dart';
+import 'firebase/firebase_messaging_service.dart';
+import 'firebase/verse_of_day_screen.dart';
 import 'spiritual_ai/spiritual_ai_fab.dart';
 
 const String _readerFontSizePrefsKey = 'reader_font_size';
 const double _defaultReaderFontSize = 20;
 const Color _verseTapHighlight = Color(0x332196F3);
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+
+  // ⬇ ՆՈՐ. Պիտի լինի Firebase.initializeApp-ից հետո, բայց initialize()-ից առաջ
+  FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+
+  await FirebaseMessagingService.initialize();
+
   runApp(const BibleApp());
 }
 
@@ -60,6 +76,7 @@ class _BibleAppState extends State<BibleApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: navigatorKey,
       title: 'Աստվածաշունչ',
       debugShowCheckedModeBanner: false,
       themeMode: _themeMode,
@@ -209,6 +226,20 @@ class HomeScreen extends StatelessWidget {
                   );
                 },
                 child: const Text('Հին Կտակարան'),
+              ),
+              const SizedBox(height: 18),
+              const SizedBox(height: 18),
+              ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const VerseOfDayScreen(),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.today),
+                label: const Text('Օրվա Խոսքը'),
               ),
               const SizedBox(height: 18),
               ElevatedButton(
@@ -630,7 +661,8 @@ class BooksScreen extends StatelessWidget {
                 final spacing = isNarrow ? 8.0 : 12.0;
                 final innerWidth = constraints.maxWidth - padding * 2;
                 final cellWidth = (innerWidth - spacing) / 2;
-                final cellHeight = math.max(48.0, math.min(56.0, cellWidth / 3.2));
+                final cellHeight =
+                    math.max(48.0, math.min(56.0, cellWidth / 3.2));
                 return Padding(
                   padding: EdgeInsets.all(padding),
                   child: GridView.builder(
@@ -710,8 +742,8 @@ class _ChaptersScreenState extends State<ChaptersScreen> {
   }
 
   void _openChapter(int chapterNumber, {int? targetVerse}) {
-    final text = bibleText[widget.bookName]?[chapterNumber] ??
-        'Տեքստը դեռ չի ավելացվել';
+    final text =
+        bibleText[widget.bookName]?[chapterNumber] ?? 'Տեքստը դեռ չի ավելացվել';
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -774,9 +806,7 @@ class _ChaptersScreenState extends State<ChaptersScreen> {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 6),
         child: ElevatedButton(
-          onPressed: enabled
-              ? () => setState(() => _tabIndex = index)
-              : null,
+          onPressed: enabled ? () => setState(() => _tabIndex = index) : null,
           style: ElevatedButton.styleFrom(
             backgroundColor: selected ? Colors.white : Colors.grey[800],
             foregroundColor: selected ? Colors.black : Colors.white,
@@ -1341,9 +1371,7 @@ class VerseHelper {
             child: Container(
               key: verseAnchorKey,
               margin: const EdgeInsets.only(right: 4),
-              padding: isJumpTarget
-                  ? const EdgeInsets.all(5)
-                  : EdgeInsets.zero,
+              padding: isJumpTarget ? const EdgeInsets.all(5) : EdgeInsets.zero,
               decoration: isJumpTarget
                   ? BoxDecoration(
                       shape: BoxShape.circle,
@@ -1596,8 +1624,7 @@ class VerseHelper {
                 TextSpan(
                   text: word,
                   style: baseStyle.copyWith(
-                    backgroundColor:
-                        highlightVerse ? _verseTapHighlight : null,
+                    backgroundColor: highlightVerse ? _verseTapHighlight : null,
                   ),
                 ),
               );
@@ -1630,8 +1657,7 @@ class VerseHelper {
                   style: baseStyle.copyWith(
                     letterSpacing: 0.2,
                     wordSpacing: 1.5,
-                    backgroundColor:
-                        highlightVerse ? _verseTapHighlight : null,
+                    backgroundColor: highlightVerse ? _verseTapHighlight : null,
                   ),
                   recognizer: wordTapRecognizer,
                 ),
@@ -3565,7 +3591,8 @@ class _ChapterTextScreenWithHighlightState
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w500,
-                color: isDark ? Colors.white : const Color.fromARGB(255, 0, 0, 0),
+                color:
+                    isDark ? Colors.white : const Color.fromARGB(255, 0, 0, 0),
               ),
             ),
           ),

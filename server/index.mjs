@@ -50,12 +50,80 @@ const TEACHERS_FILE = "server/teachers.txt";
 
 let learnedCache = "";
 const extraTeachers = new Set();
+const verseState = new Map();
 
 function envTeachers() {
   return (process.env.TELEGRAM_ADMIN_IDS || "")
     .split(/[,\s]+/)
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+function telegramCommand(text) {
+  const raw = String(text || "").trim();
+  const match = raw.match(/^\/([^\s@]+)(?:@\S+)?(?:\s+([\s\S]*))?$/);
+  if (match) {
+    return {
+      cmd: match[1].toLowerCase(),
+      rest: (match[2] || "").trim(),
+    };
+  }
+  const lower = raw.toLowerCase();
+  if (
+    lower === "verse" ||
+    lower === "վերսե" ||
+    lower === "օրվա խոսք" ||
+    lower === "օրվա խոսքը"
+  ) {
+    return {cmd: "verse", rest: ""};
+  }
+  return {cmd: "", rest: raw};
+}
+
+function isVerseCommand(cmd) {
+  return cmd === "verse" || cmd === "վերսե";
+}
+
+function parseVerseMessage(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return {reference: "", text: ""};
+  const lines = raw
+    .split(/\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length === 1) {
+    const parts = lines[0].split(/\s*[|—–]\s*/);
+    if (parts.length >= 2) {
+      return {reference: parts[0].trim(), text: parts.slice(1).join(" ").trim()};
+    }
+    return {reference: "", text: lines[0]};
+  }
+  return {reference: lines[0], text: lines.slice(1).join("\n")};
+}
+
+async function saveVerseOfDay({text, reference}) {
+  const verseText = String(text || "").trim();
+  const verseRef = String(reference || "").trim();
+  if (!verseText) {
+    throw new Error("empty_verse");
+  }
+  const projectId = process.env.FIREBASE_PROJECT_ID || "spiritual-ai-414c4";
+  const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/verseOfDay/today`;
+  const res = await fetch(url, {
+    method: "PATCH",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      fields: {
+        text: {stringValue: verseText},
+        reference: {stringValue: verseRef},
+        updatedAt: {timestampValue: new Date().toISOString()},
+      },
+    }),
+  });
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(detail || `firestore_${res.status}`);
+  }
 }
 
 function parseTeacherIds(text) {
@@ -626,18 +694,19 @@ async function handleTelegram(req, res, body) {
   const userId = message?.from?.id;
   const text = asString(message?.text, 2000);
   if (!chatId || !text) return;
+  const {cmd, rest} = telegramCommand(text);
 
-  if (text === "/start") {
+  if (cmd === "start") {
     await sendTelegram(
       chatId,
       isAdmin(userId)
-        ? "Բարև։ Դուք ուսուցիչ եք։ Հարցրեք, հետո reply արեք իմ պատասխանին ու գրեք ճիշտ տարբերակը։\n\n/fix ուղղված պատասխանը\n/lessons — սովորվածները\n/teachers — ուսուցիչների ցանկը\n/addteacher ID — ընկերոջ ID-ն ավելացնել\n/myid — ձեր ID-ն"
+        ? "Բարև։ Դուք ուսուցիչ եք։ Հարցրեք, հետո reply արեք իմ պատասխանին ու գրեք ճիշտ տարբերակը։\n\n/verse — Օրվա Խոսքը փոխել\n/fix ուղղված պատասխանը\n/lessons — սովորվածները\n/teachers — ուսուցիչների ցանկը\n/addteacher ID — ընկերոջ ID-ն ավելացնել\n/myid — ձեր ID-ն"
         : "Բարև։ Ես Հոգևոր ԱԲ-ն եմ։ Հարցրեք հայերենով Աստվածաշնչի կամ հոգևոր թեմաներով։",
     );
     return;
   }
 
-  if (text === "/myid") {
+  if (cmd === "myid") {
     await sendTelegram(
       chatId,
       `Ձեր Telegram ID-ն է ${userId}։\nԵրեք ուսուցիչների ID-ները Render-ում դրեք այսպես.\nTELEGRAM_ADMIN_IDS=111111,222222,333333`,
@@ -645,19 +714,22 @@ async function handleTelegram(req, res, body) {
     return;
   }
 
-  if (text === "/cancel") {
+  if (cmd === "cancel") {
     teachState.delete(chatId);
-    await sendTelegram(chatId, "Սովորեցնելը չեղարկվեց։");
+    verseState.delete(chatId);
+    await sendTelegram(chatId, "Չեղարկվեց։");
     return;
   }
 
   if (
-    text === "/lessons" ||
-    text === "/teachers" ||
-    text.startsWith("/teach") ||
-    text.startsWith("/fix") ||
-    text.startsWith("/addteacher") ||
-    teachState.has(chatId)
+    cmd === "lessons" ||
+    cmd === "teachers" ||
+    isVerseCommand(cmd) ||
+    cmd === "teach" ||
+    cmd === "fix" ||
+    cmd === "addteacher" ||
+    teachState.has(chatId) ||
+    verseState.has(chatId)
   ) {
     if (!isAdmin(userId)) {
       await sendTelegram(
@@ -666,6 +738,53 @@ async function handleTelegram(req, res, body) {
       );
       return;
     }
+  }
+
+  async function publishVerse(sourceText) {
+    const parsed = parseVerseMessage(sourceText);
+    if (!parsed.text) {
+      await sendTelegram(
+        chatId,
+        "Դատարկ էր։ Գրեք այսպես.\n\nՀովհաննես 3։16\nՔանզի այնպես սիրեց Աստված աշխարհը...",
+      );
+      return;
+    }
+    try {
+      await saveVerseOfDay(parsed);
+      await sendTelegram(
+        chatId,
+        parsed.reference
+          ? `Օրվա Խոսքը թարմացվեց։\n${parsed.reference}`
+          : "Օրվա Խոսքը թարմացվեց։ Հավելվածում հիմա կերևա։",
+      );
+    } catch (error) {
+      console.error(error);
+      await sendTelegram(
+        chatId,
+        "Չստացվեց պահել Firestore-ում։ Firebase-ում verseOfDay-ի write-ը պետք է բաց լինի։",
+      );
+    }
+  }
+
+  if (isVerseCommand(cmd) && !rest) {
+    verseState.set(chatId, true);
+    await sendTelegram(
+      chatId,
+      "Գրեք Օրվա Խոսքը այսպես (առաջին տողը համարն է).\n\nՀովհաննես 3։16\nՔանզի այնպես սիրեց Աստված աշխարհը...\n\nՉեղարկելու համար՝ /cancel",
+    );
+    return;
+  }
+
+  if (isVerseCommand(cmd) && rest) {
+    verseState.delete(chatId);
+    await publishVerse(rest);
+    return;
+  }
+
+  if (verseState.has(chatId)) {
+    verseState.delete(chatId);
+    await publishVerse(text);
+    return;
   }
 
   if (text === "/teachers") {

@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "679587606372",
+    "project_id": "spiritual-ai-414c4",
+    "storage_bucket": "spiritual-ai-414c4.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:679587606372:android:15e99d78e73bce23d7d471",
+        "android_client_info": {
+          "package_name": "com.armenianbible.bible"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "679587606372-dparr4ipppihjculmvl2pi013584mm09.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAL59tEdRTRANUApl-BSDFu7l8FTIbq8UE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "679587606372-dparr4ipppihjculmvl2pi013584mm09.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

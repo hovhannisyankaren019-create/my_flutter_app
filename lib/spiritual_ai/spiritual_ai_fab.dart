@@ -1,9 +1,38 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../firebase/auth_screen.dart';
 import 'spiritual_ai_screen.dart';
 
 class SpiritualAiFab extends StatelessWidget {
   const SpiritualAiFab({super.key});
+
+  void _openSpiritualAi(BuildContext context) {
+    User? user;
+    try {
+      user = FirebaseAuth.instance.currentUser;
+    } catch (_) {
+      user = null;
+    }
+
+    if (user == null) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const AuthScreen(),
+        ),
+      );
+    } else {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const SpiritualAiScreen(
+            isGuest: false,
+          ),
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -15,12 +44,7 @@ class SpiritualAiFab extends StatelessWidget {
           color: Colors.transparent,
           child: InkWell(
             customBorder: const CircleBorder(),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const SpiritualAiScreen()),
-              );
-            },
+            onTap: () => _openSpiritualAi(context),
             child: Ink(
               width: 68,
               height: 68,
