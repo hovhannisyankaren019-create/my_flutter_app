@@ -108,7 +108,15 @@ async function saveVerseOfDay({text, reference}) {
     throw new Error("empty_verse");
   }
   const projectId = process.env.FIREBASE_PROJECT_ID || "spiritual-ai-414c4";
-  const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/verseOfDay/today`;
+  const apiKey =
+    process.env.FIREBASE_API_KEY || "AIzaSyAL59tEdRTRANUApl-BSDFu7l8FTIbq8UE";
+  const params = new URLSearchParams({
+    key: apiKey,
+    "updateMask.fieldPaths": "text",
+  });
+  params.append("updateMask.fieldPaths", "reference");
+  params.append("updateMask.fieldPaths", "updatedAt");
+  const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/verseOfDay/today?${params}`;
   const res = await fetch(url, {
     method: "PATCH",
     headers: {"Content-Type": "application/json"},
