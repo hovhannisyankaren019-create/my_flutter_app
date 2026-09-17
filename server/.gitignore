@@ -2,3 +2,5 @@
 .env.*
 !.env.example
 node_modules/
+firebase-adminsdk.json
+*-firebase-adminsdk-*.json

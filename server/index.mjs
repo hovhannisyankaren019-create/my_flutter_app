@@ -148,9 +148,19 @@ function b64url(value) {
 
 function serviceAccountFromEnv() {
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT || "";
-  if (!raw.trim()) return null;
+  if (raw.trim()) {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+  const filePath =
+    process.env.FIREBASE_SERVICE_ACCOUNT_FILE ||
+    path.join(__dirname, "firebase-adminsdk.json");
   try {
-    return JSON.parse(raw);
+    const fileRaw = fs.readFileSync(filePath, "utf8");
+    return JSON.parse(fileRaw);
   } catch {
     return null;
   }
