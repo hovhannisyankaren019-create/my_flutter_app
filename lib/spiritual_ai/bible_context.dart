@@ -1045,7 +1045,7 @@ class BibleContextRetriever {
       return false;
     }
     if (wantsLocateVerse(t)) return false;
-    if (wantsHistoricalFacts(t)) return true;
+    if (wantsHistoricalFacts(t) || wantsInterpretation(t)) return true;
     if (wantsVerseOnly(t) && !wantsMoreVerses(t)) return false;
 
     final verseFollow = t.contains('շարունակ') ||
@@ -1126,6 +1126,18 @@ class BibleContextRetriever {
                 t.contains('տա') ||
                 t.contains('ասա') ||
                 t.contains('պատմ')));
+  }
+
+  bool wantsInterpretation(String question) {
+    final t = question.toLowerCase();
+    return t.contains('մեկնաբան') ||
+        t.contains('մեկնութ') ||
+        t.contains('նշանակում') ||
+        t.contains('բացատր');
+  }
+
+  bool wantsRestrictedSources(String question) {
+    return wantsHistoricalFacts(question) || wantsInterpretation(question);
   }
 
   bool wantsCommentary(String question) {
