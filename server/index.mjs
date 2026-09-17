@@ -147,10 +147,18 @@ function b64url(value) {
 }
 
 function serviceAccountFromEnv() {
-  const raw = process.env.FIREBASE_SERVICE_ACCOUNT || "";
-  if (raw.trim()) {
+  let raw = process.env.FIREBASE_SERVICE_ACCOUNT || "";
+  raw = raw.trim().replace(/^\uFEFF/, "");
+  if (
+    (raw.startsWith("'") && raw.endsWith("'")) ||
+    (raw.startsWith("`") && raw.endsWith("`"))
+  ) {
+    raw = raw.slice(1, -1).trim();
+  }
+  if (raw) {
     try {
-      return JSON.parse(raw);
+      const parsed = JSON.parse(raw);
+      if (parsed?.client_email && parsed?.private_key) return parsed;
     } catch {
       return null;
     }
@@ -160,10 +168,12 @@ function serviceAccountFromEnv() {
     path.join(__dirname, "firebase-adminsdk.json");
   try {
     const fileRaw = fs.readFileSync(filePath, "utf8");
-    return JSON.parse(fileRaw);
+    const parsed = JSON.parse(fileRaw);
+    if (parsed?.client_email && parsed?.private_key) return parsed;
   } catch {
     return null;
   }
+  return null;
 }
 
 async function firebaseMessagingToken(sa) {
@@ -193,9 +203,20 @@ async function firebaseMessagingToken(sa) {
   return data.access_token;
 }
 
+function isBotStatusText(value) {
+  const raw = String(value || "");
+  return (
+    raw.includes("FIREBASE_SERVICE_ACCOUNT") ||
+    raw.includes("notification չգնաց") ||
+    raw.includes("Հաղորդագրությունը ուղարկվեց")
+  );
+}
+
 async function sendVerseNotification({text, reference}) {
   const title = "Օրվա Խոսքը";
-  const body = reference ? `${reference}\n${text}` : text;
+  const verseLine = String(text || "").trim();
+  const refLine = String(reference || "").trim();
+  const body = refLine ? `${refLine}\n${verseLine}` : verseLine;
   const shortBody = body.length > 240 ? `${body.slice(0, 237)}...` : body;
   const projectId = process.env.FIREBASE_PROJECT_ID || "spiritual-ai-414c4";
   const sa = serviceAccountFromEnv();
@@ -963,6 +984,13 @@ async function handleTelegram(req, res, body) {
       );
       return;
     }
+    if (isBotStatusText(parsed.text) || isBotStatusText(parsed.reference)) {
+      await sendTelegram(
+        chatId,
+        "Սա բոտի հաղորդագրությունն է, ոչ Օրվա Խոսքը։ Գրեք միայն համարը և Աստվածաշնչի տեքստը, օրինակ.\n\nՓիլիմոն 1։6\nՈր քո հավատի հաղորդակցությունը գործուն լինի...",
+      );
+      return;
+    }
     try {
       await saveVerseOfDay(parsed);
       let pushNote = "";
@@ -979,8 +1007,8 @@ async function handleTelegram(req, res, body) {
       await sendTelegram(
         chatId,
         parsed.reference
-          ? `Օրվա Խոսքը թարմացվեց։\n${parsed.reference}${pushNote}`
-          : `Օրվա Խոսքը թարմացվեց։${pushNote}`,
+          ? `Օրվա Խոսքը թարմացվեց։\n${parsed.reference}\n${pushNote}`.trim()
+          : `Օրվա Խոսքը թարմացվեց։\n${pushNote}`.trim(),
       );
     } catch (error) {
       console.error(error);
