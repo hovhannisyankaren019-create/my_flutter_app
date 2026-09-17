@@ -120,7 +120,7 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
         hasPriorTurn: previous.any((item) => item.role == 'assistant'),
         previousUser: lastUserText,
       );
-      final wantsHistory = retriever.wantsHistoricalFacts(text);
+      final wantsHistory = retriever.wantsRestrictedSources(text);
       if (retriever.looksLikeImageAsk(text) && !wantsHistory) {
         setState(() {
           _messages.add(
@@ -142,7 +142,7 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
       var askText = text;
       if (wantsHistory) {
         askText =
-            '$text\n\n(Համակարգ. պատմական կամ մեկնաբանական պատասխանը միայն թույլատրելի աղբյուրներից է։)';
+            '$text\n\n(Համակարգ. միանգամից տուր նաև պատմական տվյալները՝ միայն թույլատրելի աղբյուրներից։)';
       }
 
       final reply = await _service.ask(

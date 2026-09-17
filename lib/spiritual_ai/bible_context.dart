@@ -1137,7 +1137,48 @@ class BibleContextRetriever {
   }
 
   bool wantsRestrictedSources(String question) {
-    return wantsHistoricalFacts(question) || wantsInterpretation(question);
+    return wantsHistoricalFacts(question) ||
+        wantsInterpretation(question) ||
+        wantsAutoHistorical(question);
+  }
+
+  bool wantsAutoHistorical(String question) {
+    if (wantsHistoricalFacts(question) || wantsInterpretation(question)) {
+      return true;
+    }
+    if (asksAboutBibleBook(question)) return true;
+    if (wantsIdentity(question) &&
+        _passagesFromPeople(question, limit: 1).isNotEmpty) {
+      return true;
+    }
+    return false;
+  }
+
+  bool asksAboutBibleBook(String question) {
+    if (_parseReferenceSpecs(question).any((s) => s.startVerse != null)) {
+      return false;
+    }
+    ensureReady();
+    final t = question.toLowerCase();
+    if (t.contains('ավետարան') ||
+        t.contains('աւետարան') ||
+        t.contains('ընդհանրական թուղթ') ||
+        t.contains('առաքելոց')) {
+      return true;
+    }
+    if ((t.contains('գիրք') || t.contains('գրք')) &&
+        (t.contains('աստվածաշնչ') ||
+            t.contains('աստուածաշնչ') ||
+            t.contains('ինչ գիրք') ||
+            t.contains('որ գիրք'))) {
+      return true;
+    }
+    final n = TransliterationHelper.normalizeForSearch(question);
+    for (final entry in _bookNames) {
+      final bn = TransliterationHelper.normalizeForSearch(entry.key);
+      if (bn.length >= 4 && n.contains(bn)) return true;
+    }
+    return false;
   }
 
   bool wantsCommentary(String question) {

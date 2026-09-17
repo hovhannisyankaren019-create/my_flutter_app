@@ -55,7 +55,7 @@ class SpiritualAiService {
     final quote = retriever.quoteExplicitReferences(trimmed);
     if (quote.matched &&
         !retriever.wantsCommentary(trimmed) &&
-        !retriever.wantsHistoricalFacts(trimmed)) {
+        !retriever.wantsRestrictedSources(trimmed)) {
       return SpiritualAiReply(
         text: quote.text,
         passages: quote.passages,
@@ -66,7 +66,7 @@ class SpiritualAiService {
         : retriever.wantsMoreVerses(trimmed);
     if (dumpVerses &&
         !retriever.wantsCommentary(trimmed) &&
-        !retriever.wantsHistoricalFacts(trimmed)) {
+        !retriever.wantsRestrictedSources(trimmed)) {
       if (passages.isNotEmpty) {
         return SpiritualAiReply(
           text: retriever.formatQuotedPassages(passages),
@@ -82,7 +82,7 @@ class SpiritualAiService {
     }
     if (retriever.wantsRestrictedSources(trimmed)) {
       askMessage =
-          '$askMessage\n\n(Համակարգ. պատմական կամ մեկնաբանական հարց է։ Պատասխանիր միայն Դալլասի մեկնություններից, Հին Կտակարանի մշակութային-պատմական մեկնությունից, Քիների Նոր Կտակարանի մեկնությունից և Սուրբ Հայրերի Էկզեգետ մեկնություններից։ Վիքիպեդիա և այլ տեղ արգելված է։ Եթե չկա, ասա որ այս աղբյուրներում չկա։ Անգլերեն բառ մի գրիր։)';
+          '$askMessage\n\n(Համակարգ. նախ հստակ պատասխանիր հարցին, հետո միանգամից տուր պատմական տվյալները՝ միայն Դալլասի մեկնություններից, Հին Կտակարանի մշակութային-պատմական մեկնությունից, Քիների Նոր Կտակարանի մեկնությունից և Սուրբ Հայրերի Էկզեգետ մեկնություններից։ Եթե անձ է՝ ժամանակ և վայր։ Եթե գիրք է՝ ում համար է գրվել և ինչու։ Վիքիպեդիա արգելված է։ Եթե չկա, ասա որ այս աղբյուրներում չկա։ Անգլերեն բառ մի գրիր։)';
     } else if (retriever.wantsIdentity(trimmed)) {
       askMessage =
           '$askMessage\n\n(Համակարգ. սա անձի հարց է։ Առաջին նախադասությամբ հստակ ասա՝ Աստվածաշնչում նա ով է։ Մի շփոթիր համանուն կամ պատահական համարի հետ։ Հովիվ ասելիս նկատի առ բարի հովիվը՝ Տերն ու Հիսուսը։ Եթե մի անունով մի քանի հայտնի անձ կա, կարճ նշիր գլխավորներին։ Համարներ մի հորինիր։)';
