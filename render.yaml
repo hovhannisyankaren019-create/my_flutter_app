@@ -20,5 +20,7 @@ services:
         sync: false
       - key: IMAGE_PROVIDER
         value: pollinations
-      - key: IMAGE_MODEL
-        value: gemini-2.5-flash-image
+      - key: FIREBASE_PROJECT_ID
+        value: spiritual-ai-414c4
+      - key: FIREBASE_SERVICE_ACCOUNT
+        sync: false
