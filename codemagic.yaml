@@ -9,6 +9,9 @@ workflows:
       xcode: latest
 
     scripts:
+      - name: Enable Swift Package Manager
+        script: flutter config --enable-swift-package-manager
+
       - name: Get Flutter packages
         script: flutter pub get
 
