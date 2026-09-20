@@ -218,6 +218,79 @@ function isBotStatusText(value) {
   );
 }
 
+function versePushPayload({title, shortBody, text, reference}) {
+  return {
+    notification: {title, body: shortBody},
+    data: {
+      type: "verse_of_day",
+      text: String(text || ""),
+      reference: String(reference || ""),
+    },
+    android: {
+      priority: "high",
+      notification: {
+        channel_id: "high_importance_channel",
+      },
+    },
+    apns: {
+      headers: {
+        "apns-priority": "10",
+        "apns-push-type": "alert",
+      },
+      payload: {
+        aps: {
+          alert: {title, body: shortBody},
+          sound: "default",
+          badge: 1,
+        },
+      },
+    },
+  };
+}
+
+async function sendFcmV1(accessToken, projectId, message) {
+  const res = await fetch(
+    `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({message}),
+    },
+  );
+  if (!res.ok) {
+    throw new Error(await res.text());
+  }
+}
+
+async function listFcmTokens() {
+  const projectId = process.env.FIREBASE_PROJECT_ID || "spiritual-ai-414c4";
+  const apiKey =
+    process.env.FIREBASE_API_KEY || "AIzaSyAL59tEdRTRANUApl-BSDFu7l8FTIbq8UE";
+  const tokens = new Set();
+  let pageToken = "";
+  for (let i = 0; i < 10; i++) {
+    const params = new URLSearchParams({
+      key: apiKey,
+      pageSize: "300",
+    });
+    if (pageToken) params.set("pageToken", pageToken);
+    const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/verseOfDay?${params}`;
+    const res = await fetch(url);
+    if (!res.ok) break;
+    const data = await res.json();
+    for (const doc of data.documents || []) {
+      const value = doc.fields?.token?.stringValue || "";
+      if (value) tokens.add(value);
+    }
+    pageToken = data.nextPageToken || "";
+    if (!pageToken) break;
+  }
+  return [...tokens];
+}
+
 async function sendVerseNotification({text, reference}) {
   const title = "Օրվա Խոսքը";
   const verseLine = String(text || "").trim();
@@ -225,50 +298,29 @@ async function sendVerseNotification({text, reference}) {
   const body = refLine ? `${refLine}\n${verseLine}` : verseLine;
   const shortBody = body.length > 240 ? `${body.slice(0, 237)}...` : body;
   const projectId = process.env.FIREBASE_PROJECT_ID || "spiritual-ai-414c4";
+  const payload = versePushPayload({title, shortBody, text, reference});
   const sa = serviceAccountFromEnv();
   if (sa?.client_email && sa?.private_key) {
     const accessToken = await firebaseMessagingToken(sa);
-    const res = await fetch(
-      `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          message: {
-            topic: "all_users",
-            notification: {title, body: shortBody},
-            data: {
-              type: "verse_of_day",
-              text,
-              reference: reference || "",
-            },
-            android: {
-              priority: "high",
-              notification: {
-                channel_id: "high_importance_channel",
-              },
-            },
-            apns: {
-              headers: {
-                "apns-priority": "10",
-              },
-              payload: {
-                aps: {
-                  alert: {title, body: shortBody},
-                  sound: "default",
-                  badge: 1,
-                },
-              },
-            },
-          },
-        }),
-      },
-    );
-    if (!res.ok) {
-      throw new Error(await res.text());
+    let sent = 0;
+    const errors = [];
+    try {
+      await sendFcmV1(accessToken, projectId, {topic: "all_users", ...payload});
+      sent += 1;
+    } catch (error) {
+      errors.push(String(error.message || error));
+    }
+    const tokens = await listFcmTokens();
+    for (const token of tokens) {
+      try {
+        await sendFcmV1(accessToken, projectId, {token, ...payload});
+        sent += 1;
+      } catch (error) {
+        errors.push(String(error.message || error));
+      }
+    }
+    if (sent === 0) {
+      throw new Error(errors[0] || "fcm_failed");
     }
     return "fcm";
   }

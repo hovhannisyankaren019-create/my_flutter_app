@@ -4,6 +4,9 @@ service cloud.firestore {
     match /verseOfDay/{doc} {
       allow read, write: if true;
     }
+    match /fcmTokens/{doc} {
+      allow read, write: if true;
+    }
     match /{document=**} {
       allow read, write: if request.auth != null;
     }

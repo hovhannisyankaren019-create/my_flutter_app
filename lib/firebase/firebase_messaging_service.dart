@@ -1,5 +1,6 @@
 import 'dart:io' show Platform;
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
@@ -33,9 +34,9 @@ class FirebaseMessagingService {
     );
 
     await _waitForIosApnsToken();
-    await _subscribeToAllUsers();
+    await _registerDevice();
     _messaging.onTokenRefresh.listen((_) {
-      _subscribeToAllUsers();
+      _registerDevice();
     });
 
     FirebaseMessaging.onMessageOpenedApp.listen(_handleTap);
@@ -57,7 +58,21 @@ class FirebaseMessagingService {
     }
   }
 
-  static Future<void> _subscribeToAllUsers() async {
+  static Future<void> _registerDevice() async {
+    try {
+      final token = await _messaging.getToken();
+      if (token != null && token.isNotEmpty) {
+        await FirebaseFirestore.instance
+            .collection('verseOfDay')
+            .doc('fcm_${token.replaceAll('/', '_')}')
+            .set({
+          'token': token,
+          'platform': Platform.operatingSystem,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+    } catch (_) {}
+
     try {
       await _messaging.subscribeToTopic('all_users');
     } catch (_) {}
