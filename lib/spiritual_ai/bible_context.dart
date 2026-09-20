@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import '../main.dart';
 
 class BiblePassage {
@@ -169,7 +171,8 @@ class BibleContextRetriever {
   ];
 
   List<_IndexedVerse>? _index;
-  late final List<MapEntry<String, String>> _bookNames;
+  List<MapEntry<String, String>> _bookNames = const [];
+  Future<void>? _loading;
 
   static const _stopwords = {
     'ինչ',
@@ -716,28 +719,37 @@ class BibleContextRetriever {
     ],
   ];
 
-  void ensureReady() {
-    if (_index != null) return;
+  Future<void> ensureReady() {
+    if (_index != null) return Future.value();
+    return _loading ??= _buildIndex();
+  }
+
+  Future<void> _buildIndex() async {
     _bookNames = _buildBookNames();
     final index = <_IndexedVerse>[];
-    bibleText.forEach((book, chapters) {
-      chapters.forEach((chapterNum, text) {
-        final verses = VerseHelper.parseVerses(text);
-        verses.forEach((verseNum, verseText) {
-          final trimmed = verseText.trim();
-          if (trimmed.isEmpty) return;
+    var processedChapters = 0;
+    for (final bookEntry in bibleText.entries) {
+      for (final chapterEntry in bookEntry.value.entries) {
+        final verses = VerseHelper.parseVerses(chapterEntry.value);
+        for (final verseEntry in verses.entries) {
+          final trimmed = verseEntry.value.trim();
+          if (trimmed.isEmpty) continue;
           index.add(
             _IndexedVerse(
-              book: book,
-              chapter: chapterNum,
-              verse: verseNum,
+              book: bookEntry.key,
+              chapter: chapterEntry.key,
+              verse: verseEntry.key,
               original: trimmed,
               normalized: TransliterationHelper.normalizeForSearch(trimmed),
             ),
           );
-        });
-      });
-    });
+        }
+        processedChapters++;
+        if (processedChapters % 8 == 0) {
+          await Future<void>.delayed(Duration.zero);
+        }
+      }
+    }
     _index = index;
   }
 

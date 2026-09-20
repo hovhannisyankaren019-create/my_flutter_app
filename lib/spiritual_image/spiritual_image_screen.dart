@@ -74,7 +74,7 @@ class _SpiritualImageScreenState extends State<SpiritualImageScreen> {
       appBar: AppBar(
         title: const Text('Ստեղծել հոգևոր նկար'),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),
         ),
       ),

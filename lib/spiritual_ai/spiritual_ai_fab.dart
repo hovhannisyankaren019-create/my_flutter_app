@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../firebase/auth_screen.dart';
+import '../main.dart';
 import 'spiritual_ai_screen.dart';
 
 class SpiritualAiFab extends StatelessWidget {
@@ -39,7 +40,7 @@ class SpiritualAiFab extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(right: 6, bottom: 6),
       child: Tooltip(
-        message: 'Հոգևոր ԱԲ',
+        message: 'ԱԲ',
         child: Material(
           color: Colors.transparent,
           child: InkWell(
@@ -50,14 +51,10 @@ class SpiritualAiFab extends StatelessWidget {
               height: 68,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.grey[800],
-                border: Border.all(
-                  color: const Color(0xFFD4B36A),
-                  width: 1.6,
-                ),
+                color: AppColors.forest,
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.28),
+                    color: AppColors.forest.withValues(alpha: 0.28),
                     blurRadius: 12,
                     offset: const Offset(0, 4),
                   ),
@@ -68,14 +65,14 @@ class SpiritualAiFab extends StatelessWidget {
                 children: [
                   Icon(
                     Icons.auto_awesome,
-                    color: Color(0xFFD4B36A),
+                    color: AppColors.cream,
                     size: 26,
                   ),
                   SizedBox(height: 2),
                   Text(
                     'ԱԲ',
                     style: TextStyle(
-                      color: Colors.white,
+                      color: AppColors.cream,
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
                       letterSpacing: 0.6,

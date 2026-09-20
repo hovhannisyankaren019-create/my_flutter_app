@@ -1,11 +1,19 @@
 import 'package:flutter/material.dart';
 
-import 'firebase_auth_service.dart';
+import '../main.dart';
 import '../spiritual_ai/spiritual_ai_screen.dart';
+import 'firebase_auth_service.dart';
 import 'firestore_service.dart';
 
 class AuthScreen extends StatefulWidget {
-  const AuthScreen({super.key});
+  final bool embedded;
+  final VoidCallback? onGuest;
+
+  const AuthScreen({
+    super.key,
+    this.embedded = false,
+    this.onGuest,
+  });
 
   @override
   State<AuthScreen> createState() => _AuthScreenState();
@@ -20,6 +28,51 @@ class _AuthScreenState extends State<AuthScreen> {
 
   bool _isLogin = true;
   bool _isLoading = false;
+
+  InputDecoration _fieldDecoration({
+    required bool isDark,
+    required String label,
+  }) {
+    return InputDecoration(
+      labelText: label,
+      labelStyle: TextStyle(color: AppColors.muted(isDark)),
+      filled: true,
+      fillColor: isDark ? AppColors.darkForest : AppColors.lightChip,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide.none,
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide.none,
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(
+          color: isDark ? AppColors.olive : AppColors.forest,
+          width: 1.4,
+        ),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+    );
+  }
+
+  Future<void> _openAi({required bool guest}) async {
+    if (guest && widget.embedded && widget.onGuest != null) {
+      widget.onGuest!();
+      return;
+    }
+    if (widget.embedded) {
+      return;
+    }
+    if (!mounted) return;
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SpiritualAiScreen(isGuest: guest),
+      ),
+    );
+  }
 
   Future<void> _submit() async {
     final email = _emailController.text.trim();
@@ -61,13 +114,7 @@ class _AuthScreenState extends State<AuthScreen> {
       }
 
       if (!mounted) return;
-
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => const SpiritualAiScreen(),
-        ),
-      );
+      await _openAi(guest: false);
     } catch (e) {
       if (!mounted) return;
 
@@ -113,13 +160,7 @@ class _AuthScreenState extends State<AuthScreen> {
       }
 
       if (!mounted) return;
-
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => const SpiritualAiScreen(),
-        ),
-      );
+      await _openAi(guest: false);
     } catch (e) {
       if (!mounted) return;
 
@@ -166,102 +207,126 @@ class _AuthScreenState extends State<AuthScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
+      backgroundColor: AppColors.bg(isDark),
       appBar: AppBar(
-        title: Text(_isLogin ? 'Մուտք' : 'Գրանցում'),
+        backgroundColor: AppColors.bg(isDark),
+        automaticallyImplyLeading: !widget.embedded,
+        title: Text(
+          _isLogin ? 'Մուտք' : 'Գրանցում',
+          style: TextStyle(
+            fontSize: 28,
+            fontWeight: FontWeight.w600,
+            color: AppColors.text(isDark),
+          ),
+        ),
       ),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: Column(
             children: [
-              const Icon(
+              Icon(
                 Icons.auto_awesome,
-                size: 70,
+                size: 48,
+                color: isDark ? AppColors.olive : AppColors.forest,
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 12),
               Text(
-                'Հոգևոր ԱԲ',
-                style: Theme.of(context).textTheme.headlineMedium,
+                'ԱԲ',
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.text(isDark),
+                ),
               ),
-              const SizedBox(height: 30),
+              const SizedBox(height: 8),
+              Text(
+                _isLogin
+                    ? 'Մուտք գործեք՝ զրույցները պահելու համար'
+                    : 'Ստեղծեք հաշիվ՝ զրույցները պահելու համար',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  height: 1.4,
+                  color: AppColors.muted(isDark),
+                ),
+              ),
+              const SizedBox(height: 28),
               TextField(
                 controller: _emailController,
                 keyboardType: TextInputType.emailAddress,
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.onSurface,
-                ),
-                cursorColor: Theme.of(context).colorScheme.primary,
-                decoration: InputDecoration(
-                  labelText: 'Email',
-                  labelStyle: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                  border: const OutlineInputBorder(),
-                  enabledBorder: OutlineInputBorder(
-                    borderSide: BorderSide(
-                      color: Theme.of(context).colorScheme.outline,
-                    ),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderSide: BorderSide(
-                      color: Theme.of(context).colorScheme.primary,
-                      width: 2,
-                    ),
-                  ),
-                ),
+                style: TextStyle(color: AppColors.text(isDark)),
+                cursorColor: AppColors.forest,
+                decoration: _fieldDecoration(isDark: isDark, label: 'Email'),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 14),
               TextField(
                 controller: _passwordController,
                 obscureText: true,
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.onSurface,
-                ),
-                cursorColor: Theme.of(context).colorScheme.primary,
-                decoration: InputDecoration(
-                  labelText: 'Գաղտնաբառ',
-                  labelStyle: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                  border: const OutlineInputBorder(),
-                  enabledBorder: OutlineInputBorder(
-                    borderSide: BorderSide(
-                      color: Theme.of(context).colorScheme.outline,
-                    ),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderSide: BorderSide(
-                      color: Theme.of(context).colorScheme.primary,
-                      width: 2,
-                    ),
-                  ),
+                style: TextStyle(color: AppColors.text(isDark)),
+                cursorColor: AppColors.forest,
+                decoration: _fieldDecoration(
+                  isDark: isDark,
+                  label: 'Գաղտնաբառ',
                 ),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 22),
               SizedBox(
                 width: double.infinity,
-                child: ElevatedButton(
+                height: 48,
+                child: FilledButton(
                   onPressed: _isLoading ? null : _submit,
+                  style: FilledButton.styleFrom(
+                    backgroundColor:
+                        isDark ? AppColors.darkForest : AppColors.forest,
+                    foregroundColor: AppColors.cream,
+                    disabledBackgroundColor: AppColors.olive,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
                   child: _isLoading
                       ? const SizedBox(
                           height: 20,
                           width: 20,
-                          child: CircularProgressIndicator(),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppColors.cream,
+                          ),
                         )
                       : Text(
                           _isLogin ? 'Մուտք' : 'Գրանցվել',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                 ),
               ),
               const SizedBox(height: 12),
               SizedBox(
                 width: double.infinity,
+                height: 48,
                 child: OutlinedButton.icon(
                   onPressed: _isLoading ? null : _signInWithGoogle,
-                  icon: const Icon(Icons.login),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.text(isDark),
+                    side: BorderSide(
+                      color: AppColors.olive.withValues(alpha: 0.55),
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  icon: Icon(
+                    Icons.login,
+                    color: isDark ? AppColors.olive : AppColors.forest,
+                  ),
                   label: const Text(
                     'Մուտք Google-ով',
+                    style: TextStyle(fontWeight: FontWeight.w600),
                   ),
                 ),
               ),
@@ -278,22 +343,24 @@ class _AuthScreenState extends State<AuthScreen> {
                   _isLogin
                       ? 'Դեռ հաշիվ չունե՞ս։ Գրանցվել'
                       : 'Արդեն հաշիվ ունե՞ս։ Մուտք գործել',
+                  style: TextStyle(
+                    color: isDark ? AppColors.olive : AppColors.forest,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
-              const SizedBox(height: 12),
               TextButton.icon(
-                onPressed: () {
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const SpiritualAiScreen(
-                        isGuest: true,
-                      ),
-                    ),
-                  );
-                },
-                icon: const Icon(Icons.person_outline),
-                label: const Text('Մտնել որպես հյուր'),
+                onPressed: _isLoading
+                    ? null
+                    : () => _openAi(guest: true),
+                icon: Icon(
+                  Icons.person_outline,
+                  color: AppColors.muted(isDark),
+                ),
+                label: Text(
+                  'Մտնել որպես հյուր',
+                  style: TextStyle(color: AppColors.muted(isDark)),
+                ),
               ),
             ],
           ),

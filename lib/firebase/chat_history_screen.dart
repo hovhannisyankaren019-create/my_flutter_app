@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import '../main.dart';
 import '../spiritual_ai/spiritual_ai_screen.dart';
 import 'chat_firestore_service.dart';
 
@@ -21,30 +22,46 @@ class _ChatHistoryScreenState extends State<ChatHistoryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
+      backgroundColor: AppColors.bg(isDark),
       appBar: AppBar(
-        title: const Text('Նախորդ զրույցներ'),
+        backgroundColor: AppColors.bg(isDark),
+        title: Text(
+          'Նախորդ զրույցներ',
+          style: TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.w600,
+            color: AppColors.text(isDark),
+          ),
+        ),
       ),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: _chatService.streamChats(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-              child: CircularProgressIndicator(),
+            return Center(
+              child: CircularProgressIndicator(color: AppColors.forest),
             );
           }
 
           if (snapshot.hasError) {
-            return const Center(
-              child: Text('Չհաջողվեց բեռնել զրույցները։'),
+            return Center(
+              child: Text(
+                'Չհաջողվեց բեռնել զրույցները։',
+                style: TextStyle(color: AppColors.text(isDark)),
+              ),
             );
           }
 
           final chats = snapshot.data?.docs ?? [];
 
           if (chats.isEmpty) {
-            return const Center(
-              child: Text('Դեռևս պահպանված զրույցներ չկան։'),
+            return Center(
+              child: Text(
+                'Դեռևս պահպանված զրույցներ չկան։',
+                style: TextStyle(color: AppColors.muted(isDark)),
+              ),
             );
           }
 
@@ -58,12 +75,29 @@ class _ChatHistoryScreenState extends State<ChatHistoryScreen> {
               final title = data['title'] as String? ?? 'Նոր զրույց';
               final pinned = data['pinned'] as bool? ?? false;
 
-              return Card(
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                decoration: BoxDecoration(
+                  color: isDark ? AppColors.darkForest : AppColors.cream,
+                  borderRadius: BorderRadius.circular(16),
+                ),
                 child: ListTile(
-                  leading: const CircleAvatar(
-                    child: Icon(Icons.chat),
+                  leading: CircleAvatar(
+                    backgroundColor:
+                        isDark ? AppColors.olive : AppColors.lightChip,
+                    child: Icon(
+                      Icons.chat_bubble_outline,
+                      color: AppColors.text(isDark),
+                      size: 20,
+                    ),
                   ),
-                  title: Text(title),
+                  title: Text(
+                    title,
+                    style: TextStyle(
+                      color: AppColors.text(isDark),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [

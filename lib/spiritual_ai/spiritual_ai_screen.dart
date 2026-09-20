@@ -12,11 +12,17 @@ import 'spiritual_ai_service.dart';
 class SpiritualAiScreen extends StatefulWidget {
   final String? chatId;
   final bool isGuest;
+  final bool embedded;
+  final String? initialQuestion;
+  final VoidCallback? onRequestAccount;
 
   const SpiritualAiScreen({
     super.key,
     this.chatId,
     this.isGuest = false,
+    this.embedded = false,
+    this.initialQuestion,
+    this.onRequestAccount,
   });
 
   @override
@@ -57,11 +63,14 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
     super.initState();
     _chatId = widget.chatId;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      BibleContextRetriever.instance.ensureReady();
       if (_chatId != null) {
         await _loadChatMessages();
       }
       if (mounted) setState(() => _indexReady = true);
+      final question = widget.initialQuestion?.trim();
+      if (question != null && question.isNotEmpty && mounted) {
+        await _send(question);
+      }
     });
   }
 
@@ -106,7 +115,7 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
 
     try {
       final retriever = BibleContextRetriever.instance;
-      retriever.ensureReady();
+      await retriever.ensureReady();
       final previous = _messages.sublist(0, _messages.length - 1);
       var lastUserText = '';
       for (final item in previous.reversed) {
@@ -291,26 +300,47 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bubbleMine = isDark ? Colors.grey[800]! : Colors.grey[800]!;
-    final bubbleAi = isDark ? const Color(0xFF1F1F1F) : Colors.grey[100]!;
+    final bubbleMine = isDark ? const Color(0xFF9AA090) : AppColors.forest;
+    final bubbleAi = isDark ? AppColors.darkForest : AppColors.lightChip;
 
     return Scaffold(
+      backgroundColor: AppColors.bg(isDark),
       appBar: AppBar(
-        title: const Text('Հոգևոր ԱԲ'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () {
-            Navigator.popUntil(context, (route) => route.isFirst);
-          },
+        backgroundColor: AppColors.bg(isDark),
+        title: Text(
+          'ԱԲ',
+          style: TextStyle(
+            fontSize: 28,
+            fontWeight: FontWeight.w600,
+            color: AppColors.text(isDark),
+          ),
         ),
+        centerTitle: false,
+        automaticallyImplyLeading: !widget.embedded,
+        leading: widget.embedded
+            ? null
+            : IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () {
+                  if (Navigator.of(context).canPop()) {
+                    Navigator.of(context).pop();
+                  }
+                },
+              ),
         actions: [
+          if (_isGuest && widget.onRequestAccount != null)
+            IconButton(
+              tooltip: 'Մուտք / Գրանցում',
+              icon: Icon(
+                Icons.person_outline,
+                color: AppColors.text(isDark),
+              ),
+              onPressed: widget.onRequestAccount,
+            ),
           if (!_isGuest)
             IconButton(
               tooltip: 'Նախորդ զրույցներ',
-              icon: const Icon(
-                Icons.history,
-                color: Colors.white,
-              ),
+              icon: const Icon(Icons.history),
               onPressed: () {
                 Navigator.push(
                   context,
@@ -323,16 +353,15 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
           if (!_isGuest)
             IconButton(
               tooltip: 'Դուրս գալ',
-              icon: const Icon(
-                Icons.logout,
-                color: Colors.white,
-              ),
+              icon: const Icon(Icons.logout),
               onPressed: () async {
                 try {
                   await _authService.logout();
                 } catch (_) {}
                 if (!context.mounted) return;
-                Navigator.popUntil(context, (route) => route.isFirst);
+                if (!widget.embedded) {
+                  Navigator.popUntil(context, (route) => route.isFirst);
+                }
               },
             ),
         ],
@@ -341,7 +370,7 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
         children: [
           if (!SpiritualAiConfig.isConfigured)
             Material(
-              color: Colors.orange.withValues(alpha: 0.18),
+              color: AppColors.olive.withValues(alpha: 0.22),
               child: const Padding(
                 padding: EdgeInsets.all(12),
                 child: Text(
@@ -351,43 +380,74 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
               ),
             ),
           Expanded(
-            child: ListView(
-              controller: _scrollController,
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              children: [
-                for (final item in _messages)
-                  _MessageBubble(
-                    item: item,
-                    mineColor: bubbleMine,
-                    aiColor: bubbleAi,
-                    isDark: isDark,
-                  ),
-                if (_sending)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: bubbleAi,
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
+            child: _messages.isEmpty && !_sending
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 32),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.auto_awesome,
+                            size: 42,
+                            color: isDark ? AppColors.darkOlive : AppColors.olive,
+                          ),
+                          const SizedBox(height: 14),
+                          Text(
+                            'Հարցրեք Աստվածաշնչի մասին',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.text(isDark),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
+                  )
+                : ListView(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                    children: [
+                      for (final item in _messages)
+                        _MessageBubble(
+                          item: item,
+                          mineColor: bubbleMine,
+                          aiColor: bubbleAi,
+                          isDark: isDark,
+                        ),
+                      if (_sending)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Container(
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: bubbleAi,
+                                borderRadius: BorderRadius.circular(18),
+                              ),
+                              child: SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: isDark
+                                      ? AppColors.cream
+                                      : AppColors.forest,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
-              ],
-            ),
           ),
           SafeArea(
             top: false,
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
               child: Row(
                 children: [
                   Expanded(
@@ -398,23 +458,24 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
                       textInputAction: TextInputAction.send,
                       enabled: _indexReady && !_sending,
                       onSubmitted: (_) => _send(),
-                      cursorColor: Colors.black,
-                      style: const TextStyle(
-                        color: Colors.black,
+                      cursorColor: AppColors.forest,
+                      style: TextStyle(
+                        color: AppColors.text(isDark),
                         fontSize: 16,
                       ),
                       decoration: InputDecoration(
                         hintText: !_indexReady
                             ? 'Բեռնվում է Աստվածաշնչի տեքստը...'
-                            : 'Գրեք հայերեն հարցը...',
+                            : 'Հարց...',
                         hintStyle: TextStyle(
-                          color: Colors.grey[600],
+                          color: AppColors.muted(isDark),
                           fontSize: 16,
                         ),
                         filled: true,
-                        fillColor: Colors.grey[100],
+                        fillColor:
+                            isDark ? AppColors.darkForest : AppColors.lightChip,
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(24),
+                          borderRadius: BorderRadius.circular(22),
                           borderSide: BorderSide.none,
                         ),
                         contentPadding: const EdgeInsets.symmetric(
@@ -424,12 +485,15 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
                       ),
                     ),
                   ),
+                  const SizedBox(width: 8),
                   IconButton.filled(
                     onPressed: _indexReady && !_sending ? () => _send() : null,
-                    icon: const Icon(Icons.send),
+                    icon: const Icon(Icons.send_rounded),
                     style: IconButton.styleFrom(
-                      backgroundColor: Colors.grey[800],
-                      foregroundColor: Colors.white,
+                      backgroundColor:
+                          isDark ? AppColors.darkForest : AppColors.forest,
+                      foregroundColor: AppColors.cream,
+                      disabledBackgroundColor: AppColors.olive,
                     ),
                   ),
                 ],
@@ -469,7 +533,19 @@ class _MessageBubble extends StatelessWidget {
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             color: isUser ? mineColor : aiColor,
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.only(
+              topLeft: const Radius.circular(18),
+              topRight: const Radius.circular(18),
+              bottomLeft: Radius.circular(isUser ? 18 : 6),
+              bottomRight: Radius.circular(isUser ? 6 : 18),
+            ),
+            border: isUser
+                ? null
+                : Border.all(
+                    color: isDark
+                        ? AppColors.olive.withValues(alpha: 0.35)
+                        : AppColors.olive.withValues(alpha: 0.28),
+                  ),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -479,9 +555,10 @@ class _MessageBubble extends StatelessWidget {
                   item.text,
                   style: TextStyle(
                     fontSize: 16,
+                    height: 1.4,
                     color: isUser
-                        ? Colors.white
-                        : (isDark ? Colors.white : Colors.black),
+                        ? (isDark ? AppColors.darkForest : AppColors.cream)
+                        : AppColors.text(isDark),
                   ),
                 ),
               if (!isUser && item.passages.isNotEmpty) ...[
@@ -492,7 +569,15 @@ class _MessageBubble extends StatelessWidget {
                   children: item.passages.take(6).map((p) {
                     return ActionChip(
                       visualDensity: VisualDensity.compact,
-                      label: Text(p.displayRef, style: const TextStyle(fontSize: 12)),
+                      backgroundColor:
+                          isDark ? AppColors.olive : AppColors.lightChip,
+                      label: Text(
+                        p.displayRef,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.text(isDark),
+                        ),
+                      ),
                       onPressed: () => _openPassage(context, p),
                     );
                   }).toList(),
@@ -511,7 +596,10 @@ class _MessageBubble extends StatelessWidget {
                         const SnackBar(content: Text('Պատճենվեց')),
                       );
                     },
-                    icon: const Icon(Icons.copy),
+                    icon: Icon(
+                      Icons.copy,
+                      color: AppColors.muted(isDark),
+                    ),
                   ),
                 ),
             ],
@@ -532,6 +620,7 @@ class _MessageBubble extends StatelessWidget {
           chapterNumber: passage.chapter,
           text: text,
           targetVerse: passage.verse,
+          autoClearFramesAfter: const Duration(seconds: 5),
         ),
       ),
     );
