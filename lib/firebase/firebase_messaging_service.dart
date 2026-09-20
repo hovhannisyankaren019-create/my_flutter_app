@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
@@ -30,9 +32,11 @@ class FirebaseMessagingService {
       sound: true,
     );
 
-    try {
-      await _messaging.subscribeToTopic('all_users');
-    } catch (_) {}
+    await _waitForIosApnsToken();
+    await _subscribeToAllUsers();
+    _messaging.onTokenRefresh.listen((_) {
+      _subscribeToAllUsers();
+    });
 
     FirebaseMessaging.onMessageOpenedApp.listen(_handleTap);
 
@@ -42,6 +46,21 @@ class FirebaseMessagingService {
         _handleTap(initialMessage);
       });
     }
+  }
+
+  static Future<void> _waitForIosApnsToken() async {
+    if (!Platform.isIOS) return;
+    for (var i = 0; i < 20; i++) {
+      final token = await _messaging.getAPNSToken();
+      if (token != null && token.isNotEmpty) return;
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+    }
+  }
+
+  static Future<void> _subscribeToAllUsers() async {
+    try {
+      await _messaging.subscribeToTopic('all_users');
+    } catch (_) {}
   }
 
   static void _handleTap(RemoteMessage message) {

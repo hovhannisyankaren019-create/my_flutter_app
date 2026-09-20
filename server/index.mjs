@@ -251,6 +251,18 @@ async function sendVerseNotification({text, reference}) {
                 channel_id: "high_importance_channel",
               },
             },
+            apns: {
+              headers: {
+                "apns-priority": "10",
+              },
+              payload: {
+                aps: {
+                  alert: {title, body: shortBody},
+                  sound: "default",
+                  badge: 1,
+                },
+              },
+            },
           },
         }),
       },
@@ -277,6 +289,14 @@ async function sendVerseNotification({text, reference}) {
           type: "verse_of_day",
           text,
           reference: reference || "",
+        },
+        apns: {
+          payload: {
+            aps: {
+              alert: {title, body: shortBody},
+              sound: "default",
+            },
+          },
         },
       }),
     });
