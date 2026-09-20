@@ -24,3 +24,11 @@ services:
         value: spiritual-ai-414c4
       - key: FIREBASE_SERVICE_ACCOUNT
         sync: false
+      - key: APNS_KEY_ID
+        value: 7AGFZKQQ83
+      - key: APNS_TEAM_ID
+        value: 68VK3CMGBQ
+      - key: APNS_BUNDLE_ID
+        value: com.armenianbible.bible
+      - key: APNS_KEY_P8
+        sync: false

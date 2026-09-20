@@ -1,4 +1,5 @@
 import http from "node:http";
+import http2 from "node:http2";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -265,11 +266,11 @@ async function sendFcmV1(accessToken, projectId, message) {
   }
 }
 
-async function listFcmTokens() {
+async function listPushDevices() {
   const projectId = process.env.FIREBASE_PROJECT_ID || "spiritual-ai-414c4";
   const apiKey =
     process.env.FIREBASE_API_KEY || "AIzaSyAL59tEdRTRANUApl-BSDFu7l8FTIbq8UE";
-  const tokens = new Set();
+  const devices = [];
   let pageToken = "";
   for (let i = 0; i < 10; i++) {
     const params = new URLSearchParams({
@@ -282,13 +283,97 @@ async function listFcmTokens() {
     if (!res.ok) break;
     const data = await res.json();
     for (const doc of data.documents || []) {
-      const value = doc.fields?.token?.stringValue || "";
-      if (value) tokens.add(value);
+      const token = doc.fields?.token?.stringValue || "";
+      const apnsToken = String(doc.fields?.apnsToken?.stringValue || "")
+        .replace(/[\s<>]/g, "")
+        .toLowerCase();
+      const platform = doc.fields?.platform?.stringValue || "";
+      if (token || apnsToken) {
+        devices.push({token, apnsToken, platform});
+      }
     }
     pageToken = data.nextPageToken || "";
     if (!pageToken) break;
   }
-  return [...tokens];
+  return devices;
+}
+
+function apnsKeyPem() {
+  let raw = process.env.APNS_KEY_P8 || "";
+  raw = raw.trim().replace(/\\n/g, "\n");
+  if (raw) return raw;
+  try {
+    return fs.readFileSync(path.join(__dirname, "apns.p8"), "utf8");
+  } catch {
+    return "";
+  }
+}
+
+function apnsJwt() {
+  const pem = apnsKeyPem();
+  const keyId = process.env.APNS_KEY_ID || "7AGFZKQQ83";
+  const teamId = process.env.APNS_TEAM_ID || "68VK3CMGBQ";
+  if (!pem || !keyId || !teamId) return "";
+  const header = b64url(JSON.stringify({alg: "ES256", kid: keyId}));
+  const payload = b64url(
+    JSON.stringify({iss: teamId, iat: Math.floor(Date.now() / 1000)}),
+  );
+  const key = crypto.createPrivateKey(pem);
+  const sig = crypto.sign("SHA256", Buffer.from(`${header}.${payload}`), {
+    key,
+    dsaEncoding: "ieee-p1363",
+  });
+  return `${header}.${payload}.${b64url(sig)}`;
+}
+
+function sendApnsAlert({deviceToken, title, body}) {
+  const jwt = apnsJwt();
+  const bundleId = process.env.APNS_BUNDLE_ID || "com.armenianbible.bible";
+  if (!jwt || !deviceToken) {
+    return Promise.reject(new Error("apns_not_configured"));
+  }
+  const payload = JSON.stringify({
+    aps: {
+      alert: {title, body},
+      sound: "default",
+      badge: 1,
+    },
+    type: "verse_of_day",
+  });
+  return new Promise((resolve, reject) => {
+    const client = http2.connect("https://api.push.apple.com");
+    client.on("error", reject);
+    const req = client.request({
+      ":method": "POST",
+      ":path": `/3/device/${deviceToken}`,
+      authorization: `bearer ${jwt}`,
+      "apns-topic": bundleId,
+      "apns-push-type": "alert",
+      "apns-priority": "10",
+      "content-type": "application/json",
+    });
+    let data = "";
+    req.setEncoding("utf8");
+    req.on("data", (chunk) => {
+      data += chunk;
+    });
+    req.on("response", (headers) => {
+      const status = Number(headers[":status"] || 0);
+      req.on("end", () => {
+        client.close();
+        if (status >= 200 && status < 300) {
+          resolve(status);
+          return;
+        }
+        reject(new Error(data || `apns_${status}`));
+      });
+    });
+    req.on("error", (error) => {
+      client.close();
+      reject(error);
+    });
+    req.end(payload);
+  });
 }
 
 async function sendVerseNotification({text, reference}) {
@@ -310,13 +395,27 @@ async function sendVerseNotification({text, reference}) {
     } catch (error) {
       errors.push(String(error.message || error));
     }
-    const tokens = await listFcmTokens();
-    for (const token of tokens) {
-      try {
-        await sendFcmV1(accessToken, projectId, {token, ...payload});
-        sent += 1;
-      } catch (error) {
-        errors.push(String(error.message || error));
+    const devices = await listPushDevices();
+    for (const device of devices) {
+      if (device.token) {
+        try {
+          await sendFcmV1(accessToken, projectId, {token: device.token, ...payload});
+          sent += 1;
+        } catch (error) {
+          errors.push(String(error.message || error));
+        }
+      }
+      if (device.apnsToken) {
+        try {
+          await sendApnsAlert({
+            deviceToken: device.apnsToken,
+            title,
+            body: shortBody,
+          });
+          sent += 1;
+        } catch (error) {
+          errors.push(String(error.message || error));
+        }
       }
     }
     if (sent === 0) {

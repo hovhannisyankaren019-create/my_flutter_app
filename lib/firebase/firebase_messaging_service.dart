@@ -59,19 +59,30 @@ class FirebaseMessagingService {
   }
 
   static Future<void> _registerDevice() async {
+    String fcmToken = '';
+    String apnsToken = '';
     try {
-      final token = await _messaging.getToken();
-      if (token != null && token.isNotEmpty) {
-        await FirebaseFirestore.instance
-            .collection('verseOfDay')
-            .doc('fcm_${token.replaceAll('/', '_')}')
-            .set({
-          'token': token,
+      if (Platform.isIOS) {
+        apnsToken = (await _messaging.getAPNSToken())?.replaceAll(' ', '') ?? '';
+      }
+    } catch (_) {}
+    try {
+      fcmToken = (await _messaging.getToken()) ?? '';
+    } catch (_) {}
+
+    final id = fcmToken.isNotEmpty
+        ? 'fcm_${fcmToken.replaceAll('/', '_')}'
+        : (apnsToken.isNotEmpty ? 'apns_$apnsToken' : '');
+    if (id.isNotEmpty) {
+      try {
+        await FirebaseFirestore.instance.collection('verseOfDay').doc(id).set({
+          'token': fcmToken,
+          'apnsToken': apnsToken,
           'platform': Platform.operatingSystem,
           'updatedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
-      }
-    } catch (_) {}
+      } catch (_) {}
+    }
 
     try {
       await _messaging.subscribeToTopic('all_users');
