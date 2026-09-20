@@ -28,13 +28,13 @@ class DefaultFirebaseOptions {
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyAL59tEdRTRANUApl-BSDFu7l8FTIbq8UE',
-    appId: '1:679587606372:ios:15e99d78e73bce23d7d471',
+    apiKey: 'AIzaSyCbHhcBPAd8qQVptUX8kPNqQugToOJfRXc',
+    appId: '1:679587606372:ios:157b8a78b9f4ef9bd7d471',
     messagingSenderId: '679587606372',
     projectId: 'spiritual-ai-414c4',
     storageBucket: 'spiritual-ai-414c4.firebasestorage.app',
     iosBundleId: 'com.armenianbible.bible',
     iosClientId:
-        '679587606372-dparr4ipppihjculmvl2pi013584mm09.apps.googleusercontent.com',
+        '679587606372-om64k2vf3lbscg1j5n1fluroiv2jradu.apps.googleusercontent.com',
   );
 }

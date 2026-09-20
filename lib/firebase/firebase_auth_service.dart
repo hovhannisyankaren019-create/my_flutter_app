@@ -5,11 +5,13 @@ import 'package:google_sign_in/google_sign_in.dart';
 class FirebaseAuthService {
   static const _webClientId =
       '679587606372-dparr4ipppihjculmvl2pi013584mm09.apps.googleusercontent.com';
+  static const _iosClientId =
+      '679587606372-om64k2vf3lbscg1j5n1fluroiv2jradu.apps.googleusercontent.com';
 
   final FirebaseAuth _auth = FirebaseAuth.instance;
   late final GoogleSignIn _googleSignIn = GoogleSignIn(
     scopes: const ['email', 'profile'],
-    clientId: defaultTargetPlatform == TargetPlatform.iOS ? _webClientId : null,
+    clientId: defaultTargetPlatform == TargetPlatform.iOS ? _iosClientId : null,
     serverClientId: _webClientId,
   );
 
