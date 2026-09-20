@@ -29,7 +29,7 @@ class SpiritualAiService {
   }) async {
     if (!SpiritualAiConfig.isConfigured) {
       throw SpiritualAiException(
-        'Հոգևոր ԱԲ-ն դեռ կարգավորված չէ։ Backend URL-ը պետք է տրվի SPIRITUAL_AI_URL միջոցով։',
+        'ԱԲ-ն դեռ կարգավորված չէ։ Backend URL-ը պետք է տրվի SPIRITUAL_AI_URL միջոցով։',
       );
     }
 
@@ -45,6 +45,7 @@ class SpiritualAiService {
         ? searchQuery.trim()
         : trimmed;
     final retriever = BibleContextRetriever.instance;
+    await retriever.ensureReady();
     if (retriever.looksLikeImageAsk(trimmed) &&
         !retriever.isBibleRelated(trimmed)) {
       return const SpiritualAiReply(
@@ -88,7 +89,7 @@ class SpiritualAiService {
           '$askMessage\n\n(Համակարգ. սա անձի հարց է։ Առաջին նախադասությամբ հստակ ասա՝ Աստվածաշնչում նա ով է։ Մի շփոթիր համանուն կամ պատահական համարի հետ։ Հովիվ ասելիս նկատի առ բարի հովիվը՝ Տերն ու Հիսուսը։ Եթե մի անունով մի քանի հայտնի անձ կա, կարճ նշիր գլխավորներին։ Համարներ մի հորինիր։)';
     } else {
       askMessage =
-          '$askMessage\n\n(Համակարգ. կարճ, միայն հայերեն բառերով, ըստ Աստվածաշնչի։ Անգլերեն բառ մի գրիր։ Եթե հարցը կարելի է պատասխանել Աստվածաշնչով, պատասխանիր. մի ասա թե կապ չունի։ Միայն ակնհայտ աշխարհիկ բաներին ասա, որ կապ չունի, և համար մի տուր։)';
+          '$askMessage\n\n(Համակարգ. պատասխանիր հայերենով՝ որպես հովիվ, վարդապետ, աստվածաբան և հոգեբան ըստ հարցի։ Աստվածաշնչով հիմնավորված, ջերմ ու պարզ։ Դատարկ փիլիսոփայություն մի գրիր։ Անգլերեն բառ մի գրիր։ Եթե հարցը կարելի է պատասխանել Աստվածաշնչով, պատասխանիր. մի ասա թե կապ չունի։ Միայն ակնհայտ աշխարհիկ բաներին ասա, որ կապ չունի, և համար մի տուր։)';
     }
 
     final headers = <String, String>{
