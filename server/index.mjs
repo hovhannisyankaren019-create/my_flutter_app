@@ -431,29 +431,28 @@ function sendApnsAlert({
 }
 
 async function sendApnsAlertWithFallback(args) {
-  try {
-    await sendApnsAlert({...args, host: "https://api.push.apple.com"});
-  } catch (error) {
-    const message = String(error.message || error);
-    if (message.includes("InvalidProviderToken")) {
-      const keyId = appleEnvId(process.env.APNS_KEY_ID, "");
-      const teamId = appleEnvId(process.env.APNS_TEAM_ID, "");
-      if (keyId && teamId && keyId !== teamId) {
-        await sendApnsAlert({
-          ...args,
-          host: "https://api.push.apple.com",
-          keyId: teamId,
-          teamId: keyId,
-        });
+  const hosts = [
+    "https://api.push.apple.com",
+    "https://api.sandbox.push.apple.com",
+  ];
+  const keyId = appleEnvId(process.env.APNS_KEY_ID, "");
+  const teamId = appleEnvId(process.env.APNS_TEAM_ID, "");
+  const idPairs = [{keyId, teamId}];
+  if (keyId && teamId && keyId !== teamId) {
+    idPairs.push({keyId: teamId, teamId: keyId});
+  }
+  let lastError;
+  for (const ids of idPairs) {
+    for (const host of hosts) {
+      try {
+        await sendApnsAlert({...args, ...ids, host});
         return;
+      } catch (error) {
+        lastError = error;
       }
     }
-    if (!message.includes("BadDeviceToken")) throw error;
-    await sendApnsAlert({
-      ...args,
-      host: "https://api.sandbox.push.apple.com",
-    });
   }
+  throw lastError || new Error("apns_failed");
 }
 
 const ANDROID_VERSE_PUSH = false;
@@ -1330,6 +1329,9 @@ async function handleTelegram(req, res, body) {
         } else if (String(pushResult).includes("InvalidProviderToken") || String(pushResult).includes("not_ec")) {
           pushNote =
             " iPhone չգնաց. Apple-ը բանալին չի ճանաչում (InvalidProviderToken)։ Render-ում APNS_KEY_ID-ը պետք է լինի AuthKey_XXXX.p8-ի 10 նիշը, APNS_TEAM_ID-ը՝ Membership-ի Team ID, APNS_KEY_P8-ը՝ հենց այդ ֆայլը BEGIN-ից END։ Firebase JSON այդ դաշտում մի դրիր։";
+        } else if (String(pushResult).includes("BadEnvironmentKeyInToken")) {
+          pushNote =
+            " iPhone չգնաց. Key-ը միայն Sandbox է, TestFlight-ը Production է։ Apple Keys-ում բանալու APNs-ը դարձրու Sandbox & Production, կամ նոր Key ստեղծիր երկուսով էլ։";
         } else if (String(pushResult).startsWith("fcm_no_ios")) {
           const reason = String(pushResult).slice("fcm_no_ios:".length);
           pushNote = ` iPhone ծանուցումը չանցավ Apple-ից։ ${reason}`;
