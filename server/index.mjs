@@ -524,7 +524,7 @@ const ANDROID_VERSE_PUSH = false;
 
 async function sendVerseNotification({text, reference}) {
   const title = "Օրվա խոսք";
-  const shortBody = "Օրվա խոսք";
+  const shortBody = String(reference || "").trim() || "Օրվա խոսք";
   const projectId = process.env.FIREBASE_PROJECT_ID || "spiritual-ai-414c4";
   const payload = versePushPayload({title, shortBody, text, reference});
   const sa = serviceAccountFromEnv();

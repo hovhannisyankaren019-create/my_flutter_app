@@ -20,7 +20,6 @@ import 'tbs_bible.dart';
 const String _readerFontSizePrefsKey = 'reader_font_size';
 const String _lastBibleEditionPrefsKey = 'last_bible_edition';
 const String _bibleEditionArarat = 'ararat';
-const String _bibleReaderRouteName = 'bible-reader';
 const String _bibleEditionTbs = 'tbs';
 const double _defaultReaderFontSize = 20;
 
@@ -375,66 +374,6 @@ class _BibleAppState extends State<BibleApp> {
   }
 }
 
-class _BibleNavObserver extends NavigatorObserver {
-  final ValueChanged<Route<dynamic>?> onRouteChanged;
-
-  _BibleNavObserver(this.onRouteChanged);
-
-  @override
-  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    onRouteChanged(route);
-  }
-
-  @override
-  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    onRouteChanged(previousRoute);
-  }
-
-  @override
-  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    onRouteChanged(previousRoute);
-  }
-
-  @override
-  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
-    onRouteChanged(newRoute);
-  }
-}
-
-class _LockablePagePhysics extends PageScrollPhysics {
-  const _LockablePagePhysics({
-    required this.locked,
-    required this.shouldLock,
-    super.parent,
-  });
-
-  final ValueNotifier<bool> locked;
-  final bool Function() shouldLock;
-
-  bool get _locked => shouldLock() && locked.value;
-
-  @override
-  _LockablePagePhysics applyTo(ScrollPhysics? ancestor) {
-    return _LockablePagePhysics(
-      locked: locked,
-      shouldLock: shouldLock,
-      parent: buildParent(ancestor),
-    );
-  }
-
-  @override
-  bool shouldAcceptUserOffset(ScrollMetrics position) {
-    if (_locked) return false;
-    return super.shouldAcceptUserOffset(position);
-  }
-
-  @override
-  double applyPhysicsToUserOffset(ScrollMetrics position, double offset) {
-    if (_locked) return 0;
-    return super.applyPhysicsToUserOffset(position, offset);
-  }
-}
-
 class HomeScreen extends StatefulWidget {
   final bool isDark;
   final VoidCallback onToggleTheme;
@@ -454,10 +393,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String _lastBibleEdition = _bibleEditionArarat;
   final _savedVersesKey = GlobalKey<_SavedVersesScreenState>();
   final _searchKey = GlobalKey<_SearchScreenState>();
-  final _bibleReadingLock = ValueNotifier<bool>(false);
   late final PageController _pageController;
-  late final NavigatorObserver _bibleNavObserver;
-  late final ScrollPhysics _pagePhysics;
   final List<GlobalKey<NavigatorState>> _navKeys =
       List<GlobalKey<NavigatorState>>.generate(
     5,
@@ -468,16 +404,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _pageController = PageController();
-    _bibleNavObserver = _BibleNavObserver(_onBibleRouteChanged);
-    _pagePhysics = _LockablePagePhysics(
-      locked: _bibleReadingLock,
-      shouldLock: () => _tabIndex == 1,
-    );
     _loadLastBibleEdition();
-  }
-
-  void _onBibleRouteChanged(Route<dynamic>? route) {
-    _bibleReadingLock.value = route?.settings.name == _bibleReaderRouteName;
   }
 
   Future<void> _loadLastBibleEdition() async {
@@ -501,7 +428,6 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _pageController.dispose();
-    _bibleReadingLock.dispose();
     super.dispose();
   }
 
@@ -581,7 +507,7 @@ class _HomeScreenState extends State<HomeScreen> {
         body: PageView.builder(
           controller: _pageController,
           onPageChanged: _onPageChanged,
-          physics: _pagePhysics,
+          physics: const NeverScrollableScrollPhysics(),
           itemCount: 5,
           itemBuilder: (context, index) {
             switch (index) {
@@ -600,7 +526,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     edition: _lastBibleEdition,
                     child: Navigator(
                       key: _navKeys[1],
-                      observers: [_bibleNavObserver],
                       onGenerateRoute: (settings) {
                         return MaterialPageRoute<void>(
                           settings: settings,
@@ -1940,7 +1865,6 @@ class _ChaptersScreenState extends State<ChaptersScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        settings: const RouteSettings(name: _bibleReaderRouteName),
         builder: (_) => ChapterTextScreen(
           bookName: widget.bookName,
           chapterNumber: chapterNumber,
@@ -2848,7 +2772,9 @@ class VerseHelper {
     String verseText, {
     String edition = _bibleEditionArarat,
   }) async {
-    final label = bibleBookLabel(bookName, edition);
+    final label = edition == _bibleEditionTbs
+        ? TbsBible.shortName(bookName)
+        : bookName;
     final textToCopy = '$label $chapterNumber:$verseNumber\n$verseText';
     await Clipboard.setData(ClipboardData(text: textToCopy));
     if (context.mounted) {
@@ -3865,7 +3791,6 @@ class _ChapterTextScreenState extends State<ChapterTextScreen> {
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
-        settings: const RouteSettings(name: _bibleReaderRouteName),
         builder: (_) => ChapterTextScreen(
           bookName: widget.bookName,
           chapterNumber: chapterNumber,

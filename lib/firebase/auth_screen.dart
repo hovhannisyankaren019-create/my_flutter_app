@@ -341,7 +341,7 @@ class _AuthScreenState extends State<AuthScreen> {
                       },
                 child: Text(
                   _isLogin
-                      ? 'Դեռ հաշիվ չունե՞ս։ Գրանցվել'
+                      ? 'Դեռ հաշիվ չունե՞ս։ Գրանցվի՛ր'
                       : 'Արդեն հաշիվ ունե՞ս։ Մուտք գործել',
                   style: TextStyle(
                     color: isDark ? AppColors.olive : AppColors.forest,
