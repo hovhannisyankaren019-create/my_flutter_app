@@ -97,7 +97,7 @@ class SpiritualAiService {
           '$askMessage\n\n(Համակարգ. սա անձի հարց է։ Առաջին նախադասությամբ հստակ ասա՝ Աստվածաշնչում նա ով է։ Մի շփոթիր համանուն կամ պատահական համարի հետ։ Հովիվ ասելիս նկատի առ բարի հովիվը՝ Տերն ու Հիսուսը։ Եթե մի անունով մի քանի հայտնի անձ կա, կարճ նշիր գլխավորներին։ Համարներ մի հորինիր։)';
     } else {
       askMessage =
-          '$askMessage\n\n(Համակարգ. պատասխանիր միայն հայերենով և միայն Աստվածաշնչով՝ լիարժեք, ջերմ ու պարզ։ Օտար բառ մի գրիր։ Եթե Աստվածաշունչը խոսում է այս մասին, պատասխանիր և մի ասա թե կապ չունի։ Միայն ակնհայտ աշխարհիկ բաներին ասա, որ պատասխանում ես միայն Աստվածաշնչյան հարցերին։)';
+          '$askMessage\n\n(Համակարգ. պատասխանիր միայն հայերենով և միայն Աստվածաշնչով՝ լիարժեք, ջերմ ու պարզ։ Օտար բառ մի գրիր։ Եթե Աստվածաշունչը խոսում է այս մասին, պատասխանիր և մի ասա թե կապ չունի։ Միայն ակնհայտ աշխարհիկ բաներին գրիր միայն սա, առանց համարի և առանց թվի. Այս հարցը Աստվածաշնչի հետ կապ չունի։ Ես պատասխանում եմ միայն Աստվածաշնչյան հարցերին։)';
     }
 
     final headers = <String, String>{
@@ -145,9 +145,19 @@ class SpiritualAiService {
     if (decoded is! Map) {
       throw SpiritualAiException('Սերվերը անսպասելի պատասխան տվեց։');
     }
-    final text = decoded['reply']?.toString().trim() ?? '';
+    var text = decoded['reply']?.toString().trim() ?? '';
     if (text.isEmpty) {
       throw SpiritualAiException('Պատասխանը դատարկ էր։');
+    }
+    final lower = text.toLowerCase();
+    final refusal = lower.contains('չեմ կարող') ||
+        lower.contains('չեմ պատասխան') ||
+        lower.contains('կապ չունի') ||
+        lower.contains('միայն աստվածաշնչյան');
+    if (refusal) {
+      return const SpiritualAiReply(
+        text: BibleContextRetriever.offTopicReply,
+      );
     }
     return SpiritualAiReply(text: text, passages: passages);
   }
