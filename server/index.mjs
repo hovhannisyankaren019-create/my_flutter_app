@@ -370,6 +370,26 @@ function apnsPushCheckText() {
   return lines.join("\n");
 }
 
+function ecdsaSignatureToJose(sig) {
+  if (sig.length === 64) return sig;
+  if (sig[0] !== 0x30) return sig;
+  let i = 2;
+  const readInt = () => {
+    if (sig[i] !== 0x02) throw new Error("der_int");
+    i += 1;
+    const len = sig[i++];
+    let bytes = sig.subarray(i, i + len);
+    i += len;
+    while (bytes.length > 1 && bytes[0] === 0x00) {
+      bytes = bytes.subarray(1);
+    }
+    const out = Buffer.alloc(32);
+    bytes.copy(out, 32 - bytes.length);
+    return out;
+  };
+  return Buffer.concat([readInt(), readInt()]);
+}
+
 function apnsJwt(keyId, teamId) {
   const pem = apnsKeyPem();
   const kid = appleEnvId(keyId, appleEnvId(process.env.APNS_KEY_ID, "7AGFZKQQ83"));
@@ -386,10 +406,11 @@ function apnsJwt(keyId, teamId) {
     );
     const signer = crypto.createSign("SHA256");
     signer.update(`${header}.${payload}`);
-    const sig = signer.sign({
+    const raw = signer.sign({
       key,
       dsaEncoding: "ieee-p1363",
     });
+    const sig = ecdsaSignatureToJose(raw);
     return `${header}.${payload}.${b64url(sig)}`;
   } catch (error) {
     throw new Error(`apns_key:${shortPushError(error)}`);
@@ -523,13 +544,12 @@ async function sendVerseNotification({text, reference}) {
         ? device.apnsToken
         : "";
       let delivered = false;
-      if (apnsToken && !seenApns.has(apnsToken)) {
-        seenApns.add(apnsToken);
+      if (ios && device.token && !seenIosFcm.has(device.token)) {
+        seenIosFcm.add(device.token);
         try {
-          await sendApnsAlertWithFallback({
-            deviceToken: apnsToken,
-            title,
-            body: shortBody,
+          await sendFcmV1(accessToken, projectId, {
+            token: device.token,
+            ...payload,
           });
           sent += 1;
           iosSent += 1;
@@ -538,12 +558,13 @@ async function sendVerseNotification({text, reference}) {
           errors.push(shortPushError(error));
         }
       }
-      if (!delivered && ios && device.token && !seenIosFcm.has(device.token)) {
-        seenIosFcm.add(device.token);
+      if (!delivered && apnsToken && !seenApns.has(apnsToken)) {
+        seenApns.add(apnsToken);
         try {
-          await sendFcmV1(accessToken, projectId, {
-            token: device.token,
-            ...payload,
+          await sendApnsAlertWithFallback({
+            deviceToken: apnsToken,
+            title,
+            body: shortBody,
           });
           sent += 1;
           iosSent += 1;
@@ -565,7 +586,7 @@ async function sendVerseNotification({text, reference}) {
       if (seenApns.size === 0 && seenIosFcm.size === 0) {
         return "fcm_no_ios_device";
       }
-      return `fcm_no_ios:${errors[0] || "apple"}`;
+      return `fcm_no_ios:${[...new Set(errors)].slice(0, 2).join(" | ") || "apple"}`;
     }
     if (
       iosSent === 0 &&
@@ -580,7 +601,7 @@ async function sendVerseNotification({text, reference}) {
       return "fcm_no_ios_device";
     }
     if (iosSent === 0) {
-      return `fcm_no_ios:${errors[0] || "apple"}`;
+      return `fcm_no_ios:${[...new Set(errors)].slice(0, 2).join(" | ") || "apple"}`;
     }
     return "fcm";
   }
