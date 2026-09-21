@@ -301,6 +301,13 @@ function shortPushError(error) {
     .slice(0, 160);
 }
 
+function appleEnvId(value, fallback) {
+  const cleaned = String(value || "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+  return cleaned || fallback;
+}
+
 function apnsKeyPem() {
   let raw = process.env.APNS_KEY_P8 || "";
   raw = raw.trim().replace(/^\uFEFF/, "");
@@ -319,25 +326,34 @@ function apnsKeyPem() {
       return "";
     }
   }
-  if (!raw.includes("BEGIN")) {
-    const body = raw.replace(/\s/g, "").match(/.{1,64}/g)?.join("\n") || raw;
-    raw = `-----BEGIN PRIVATE KEY-----\n${body}\n-----END PRIVATE KEY-----`;
-  }
-  return raw;
+  const begin = raw.match(/-----BEGIN [^-]+-----/)?.[0];
+  const end = raw.match(/-----END [^-]+-----/)?.[0];
+  const inner = (begin && end
+    ? raw.replace(begin, "").replace(end, "")
+    : raw
+  ).replace(/\s/g, "");
+  if (!inner) return "";
+  const wrapped = inner.match(/.{1,64}/g)?.join("\n") || inner;
+  return `${begin || "-----BEGIN PRIVATE KEY-----"}\n${wrapped}\n${end || "-----END PRIVATE KEY-----"}`;
 }
 
-function apnsJwt() {
+function apnsJwt(keyId, teamId) {
   const pem = apnsKeyPem();
-  const keyId = String(process.env.APNS_KEY_ID || "7AGFZKQQ83").trim();
-  const teamId = String(process.env.APNS_TEAM_ID || "68VK3CMGBQ").trim();
-  if (!pem || !keyId || !teamId) return "";
+  const kid = appleEnvId(keyId, appleEnvId(process.env.APNS_KEY_ID, "7AGFZKQQ83"));
+  const iss = appleEnvId(teamId, appleEnvId(process.env.APNS_TEAM_ID, "68VK3CMGBQ"));
+  if (!pem || !kid || !iss) return "";
   try {
-    const header = b64url(JSON.stringify({alg: "ES256", kid: keyId}));
-    const payload = b64url(
-      JSON.stringify({iss: teamId, iat: Math.floor(Date.now() / 1000)}),
-    );
     const key = crypto.createPrivateKey(pem);
-    const sig = crypto.sign("SHA256", Buffer.from(`${header}.${payload}`), {
+    if (key.asymmetricKeyType !== "ec") {
+      throw new Error("not_ec");
+    }
+    const header = b64url(JSON.stringify({alg: "ES256", kid}));
+    const payload = b64url(
+      JSON.stringify({iss, iat: Math.floor(Date.now() / 1000)}),
+    );
+    const signer = crypto.createSign("SHA256");
+    signer.update(`${header}.${payload}`);
+    const sig = signer.sign({
       key,
       dsaEncoding: "ieee-p1363",
     });
@@ -352,10 +368,12 @@ function sendApnsAlert({
   title,
   body,
   host = "https://api.push.apple.com",
+  keyId,
+  teamId,
 }) {
   let jwt = "";
   try {
-    jwt = apnsJwt();
+    jwt = apnsJwt(keyId, teamId);
   } catch (error) {
     return Promise.reject(error);
   }
@@ -417,6 +435,19 @@ async function sendApnsAlertWithFallback(args) {
     await sendApnsAlert({...args, host: "https://api.push.apple.com"});
   } catch (error) {
     const message = String(error.message || error);
+    if (message.includes("InvalidProviderToken")) {
+      const keyId = appleEnvId(process.env.APNS_KEY_ID, "");
+      const teamId = appleEnvId(process.env.APNS_TEAM_ID, "");
+      if (keyId && teamId && keyId !== teamId) {
+        await sendApnsAlert({
+          ...args,
+          host: "https://api.push.apple.com",
+          keyId: teamId,
+          teamId: keyId,
+        });
+        return;
+      }
+    }
     if (!message.includes("BadDeviceToken")) throw error;
     await sendApnsAlert({
       ...args,
@@ -1296,6 +1327,9 @@ async function handleTelegram(req, res, body) {
         } else if (pushResult === "fcm_no_ios_device") {
           pushNote =
             " iPhone-ին չգնաց. TestFlight հավելվածը մեկ անգամ բացեք և թույլ տվեք ծանուցումները։ Android-ը ժամանակավոր անջատված է։";
+        } else if (String(pushResult).includes("InvalidProviderToken") || String(pushResult).includes("not_ec")) {
+          pushNote =
+            " iPhone չգնաց. Apple-ը բանալին չի ճանաչում (InvalidProviderToken)։ Render-ում APNS_KEY_ID-ը պետք է լինի AuthKey_XXXX.p8-ի 10 նիշը, APNS_TEAM_ID-ը՝ Membership-ի Team ID, APNS_KEY_P8-ը՝ հենց այդ ֆայլը BEGIN-ից END։ Firebase JSON այդ դաշտում մի դրիր։";
         } else if (String(pushResult).startsWith("fcm_no_ios")) {
           const reason = String(pushResult).slice("fcm_no_ios:".length);
           pushNote = ` iPhone ծանուցումը չանցավ Apple-ից։ ${reason}`;
