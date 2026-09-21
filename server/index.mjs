@@ -334,7 +334,7 @@ function sendApnsAlert({deviceToken, title, body}) {
   }
   const payload = JSON.stringify({
     aps: {
-      alert: {title, body},
+      alert: title,
       sound: "default",
       badge: 1,
     },
@@ -377,11 +377,8 @@ function sendApnsAlert({deviceToken, title, body}) {
 }
 
 async function sendVerseNotification({text, reference}) {
-  const title = "Օրվա Խոսքը";
-  const verseLine = String(text || "").trim();
-  const refLine = String(reference || "").trim();
-  const body = refLine ? `${refLine}\n${verseLine}` : verseLine;
-  const shortBody = body.length > 240 ? `${body.slice(0, 237)}...` : body;
+  const title = "Օրվա խոսք";
+  const shortBody = "Օրվա խոսք";
   const projectId = process.env.FIREBASE_PROJECT_ID || "spiritual-ai-414c4";
   const payload = versePushPayload({title, shortBody, text, reference});
   const sa = serviceAccountFromEnv();

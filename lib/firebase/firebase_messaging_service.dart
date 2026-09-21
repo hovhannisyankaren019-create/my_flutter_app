@@ -91,6 +91,7 @@ class FirebaseMessagingService {
 
   static void _handleTap(RemoteMessage message) {
     final isVerseOfDay = message.data['type'] == 'verse_of_day' ||
+        message.notification?.title == 'Օրվա խոսք' ||
         message.notification?.title == 'Օրվա Խոսքը';
 
     if (isVerseOfDay) {
