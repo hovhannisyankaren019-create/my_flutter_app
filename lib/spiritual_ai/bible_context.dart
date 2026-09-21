@@ -1055,75 +1055,56 @@ class BibleContextRetriever {
     String previousUser = '',
   }) {
     if (!hasPriorTurn) return false;
-    if (quoteExplicitReferences(question).matched) return false;
+    if (_isStandaloneQuestion(question)) return false;
     final t = question.toLowerCase().trim();
     if (t.isEmpty) return false;
-    if (wantsIdentity(t)) {
-      final name = identitySubject(t);
-      if (name.length >= 3 && !isBibleRelated(question)) return false;
-      if (name.length >= 3) return false;
-    }
-    if (!isBibleRelated(question) &&
-        previousUser.trim().isNotEmpty &&
-        !isBibleRelated(previousUser)) {
-      return false;
-    }
-    if (wantsLocateVerse(t)) return false;
-    if (wantsHistoricalFacts(t) || wantsInterpretation(t)) return true;
-    if (wantsVerseOnly(t) && !wantsMoreVerses(t)) return false;
 
-    final verseFollow = t.contains('շարունակ') ||
-        t.contains('էլի') ||
-        t.contains('բացատր') ||
-        t.contains('մեկնաբան') ||
-        t.contains('նշանակում') ||
+    if (wantsMoreVerses(t)) return true;
+    if (t.contains('շարունակ') ||
         t.contains('այդ համար') ||
         t.contains('այս համար') ||
         t.contains('էդ համար') ||
-        t.contains('դրա') ||
-        t.contains('նրա') ||
-        t.contains('ինչու') ||
-        t.contains('ինչի') ||
-        wantsMoreVerses(t);
-
-    if (previousUser.trim().isNotEmpty &&
-        quoteExplicitReferences(previousUser).matched) {
-      return verseFollow || wantsHistoricalFacts(t);
+        t.contains('դրա համար') ||
+        t.contains('նույն համար') ||
+        t.contains('այդ հատված') ||
+        t.contains('էդ հատված') ||
+        t.contains('այս հատված')) {
+      return true;
     }
 
-    if (wantsMoreVerses(t)) return true;
-    const cues = [
-      'շարունակ',
-      'էլի',
-      'ավելի',
-      'ինչու',
-      'ինչի',
-      'իսկ ',
-      'դրա',
-      'նրա',
-      'այդ ',
-      'էդ ',
-      'էս ',
-      'սա ',
-      'դա ',
-      'նույն',
-      'մյուս',
-      'ուրիշ',
-      'հետո',
-      'բացատր',
-      'նկատի',
-      'նկարով',
-      'պատկեր',
-      'պատմական',
-      'պատմություն',
-      'պատմութիւն',
-      'տվյալ',
-      'տուեալ',
-      'ժամանակաշրջան',
-      'թվական',
-    ];
-    if (wantsHistoricalFacts(t)) return true;
-    return cues.any(t.contains);
+    final pointsBack = t.contains('այդ') ||
+        t.contains('էդ') ||
+        t.contains('դրա') ||
+        t.contains('նրա') ||
+        t.contains('նույն');
+    if (!pointsBack) return false;
+
+    if (t.length <= 40) return true;
+    return t.contains('բացատր') ||
+        t.contains('մեկնաբան') ||
+        t.contains('նշանակում') ||
+        t.contains('ինչու') ||
+        t.contains('ինչի') ||
+        t.contains('էլի');
+  }
+
+  bool _isStandaloneQuestion(String question) {
+    if (quoteExplicitReferences(question).matched) return true;
+    if (wantsLocateVerse(question)) return true;
+    if (wantsVerseOnly(question) && !wantsMoreVerses(question)) return true;
+    if (wantsIdentity(question) && identitySubject(question).length >= 3) {
+      return true;
+    }
+    if (asksAboutBibleBook(question)) return true;
+    if (wantsWordMeaning(question)) {
+      final t = question.toLowerCase();
+      final pointsBack = t.contains('այդ') ||
+          t.contains('էդ') ||
+          t.contains('դրա') ||
+          t.contains('նրա');
+      if (!pointsBack) return true;
+    }
+    return false;
   }
 
   bool wantsHistoricalFacts(String question) {

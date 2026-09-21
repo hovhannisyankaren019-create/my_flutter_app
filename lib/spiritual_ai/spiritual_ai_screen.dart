@@ -141,11 +141,10 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
         });
         return;
       }
-      final searchQuery =
-          (followUp || wantsHistory) ? _searchContext(text, previous) : text;
+      final searchQuery = followUp ? _searchContext(text, previous) : text;
       final history = _apiHistory(
         previous,
-        followUp: followUp || wantsHistory,
+        followUp: followUp,
       );
 
       var askText = text;
@@ -157,7 +156,7 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
       final reply = await _service.ask(
         message: askText,
         history: history,
-        followUp: followUp || wantsHistory,
+        followUp: followUp,
         searchQuery: searchQuery,
       );
       if (!mounted) return;
