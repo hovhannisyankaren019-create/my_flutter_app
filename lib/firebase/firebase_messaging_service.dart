@@ -25,6 +25,10 @@ class FirebaseMessagingService {
       alert: true,
       badge: true,
       sound: true,
+      announcement: false,
+      carPlay: false,
+      criticalAlert: false,
+      provisional: false,
     );
 
     await _messaging.setForegroundNotificationPresentationOptions(
@@ -47,11 +51,16 @@ class FirebaseMessagingService {
         _handleTap(initialMessage);
       });
     }
+
+    if (Platform.isIOS) {
+      Future<void>.delayed(const Duration(seconds: 3), _registerDevice);
+      Future<void>.delayed(const Duration(seconds: 10), _registerDevice);
+    }
   }
 
   static Future<void> _waitForIosApnsToken() async {
     if (!Platform.isIOS) return;
-    for (var i = 0; i < 20; i++) {
+    for (var i = 0; i < 30; i++) {
       final token = await _messaging.getAPNSToken();
       if (token != null && token.isNotEmpty) return;
       await Future<void>.delayed(const Duration(milliseconds: 500));

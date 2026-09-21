@@ -327,7 +327,7 @@ function sendApnsAlert({deviceToken, title, body}) {
   }
   const payload = JSON.stringify({
     aps: {
-      alert: title,
+      alert: {title, body},
       sound: "default",
       badge: 1,
     },
@@ -377,33 +377,51 @@ async function sendVerseNotification({text, reference}) {
   const sa = serviceAccountFromEnv();
   if (sa?.client_email && sa?.private_key) {
     const accessToken = await firebaseMessagingToken(sa);
+    let sent = 0;
+    const errors = [];
     try {
       await sendFcmV1(accessToken, projectId, {
         topic: "all_users",
         ...payload,
       });
-      return "fcm";
-    } catch (topicError) {
-      const devices = await listPushDevices();
-      let sent = 0;
-      const errors = [String(topicError.message || topicError)];
-      const seen = new Set();
-      for (const device of devices) {
-        const token = device.token;
-        if (!token || seen.has(token)) continue;
-        seen.add(token);
-        try {
-          await sendFcmV1(accessToken, projectId, {token, ...payload});
-          sent += 1;
-        } catch (error) {
-          errors.push(String(error.message || error));
-        }
-      }
-      if (sent === 0) {
-        throw new Error(errors[0] || "fcm_failed");
-      }
-      return "fcm";
+      sent += 1;
+    } catch (error) {
+      errors.push(String(error.message || error));
     }
+
+    const devices = await listPushDevices();
+    const seenApns = new Set();
+    let iosSent = 0;
+    for (const device of devices) {
+      const apnsToken = device.apnsToken;
+      if (!apnsToken || seenApns.has(apnsToken)) continue;
+      seenApns.add(apnsToken);
+      try {
+        await sendApnsAlert({
+          deviceToken: apnsToken,
+          title,
+          body: shortBody,
+        });
+        sent += 1;
+        iosSent += 1;
+      } catch (error) {
+        errors.push(String(error.message || error));
+      }
+    }
+
+    if (sent === 0) {
+      throw new Error(errors[0] || "fcm_failed");
+    }
+    if (iosSent === 0 && errors.some((item) => item.includes("apns_not_configured"))) {
+      return "fcm_no_ios_key";
+    }
+    if (iosSent === 0 && seenApns.size === 0) {
+      return "fcm_no_ios_device";
+    }
+    if (iosSent === 0) {
+      return "fcm_no_ios";
+    }
+    return "fcm";
   }
 
   const serverKey = process.env.FCM_SERVER_KEY || "";
@@ -1173,8 +1191,15 @@ async function handleTelegram(req, res, body) {
       await saveVerseOfDay(parsed);
       let pushNote = "";
       try {
-        await sendVerseNotification(parsed);
-        pushNote = " Հաղորդագրությունը ուղարկվեց հեռախոսներին։";
+        const pushResult = await sendVerseNotification(parsed);
+        pushNote =
+          pushResult === "fcm_no_ios_key"
+            ? " Android-ին գնաց։ iPhone-ին չգնաց. Render-ում դրեք APNS_KEY_P8։"
+            : pushResult === "fcm_no_ios_device"
+              ? " Android-ին գնաց։ iPhone-ին չգնաց. TestFlight հավելվածը մեկ անգամ բացեք և թույլ տվեք ծանուցումները։"
+              : pushResult === "fcm_no_ios"
+                ? " Android-ին գնաց։ iPhone ծանուցումը չանցավ Apple-ից։"
+                : " Հաղորդագրությունը ուղարկվեց հեռախոսներին։";
       } catch (pushError) {
         console.error(pushError);
         pushNote =

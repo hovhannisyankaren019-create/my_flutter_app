@@ -15,6 +15,7 @@ import FirebaseMessaging
     }
     GeneratedPluginRegistrant.register(with: self)
     UNUserNotificationCenter.current().delegate = self
+    application.registerForRemoteNotifications()
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
