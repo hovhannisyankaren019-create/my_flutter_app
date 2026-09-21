@@ -291,37 +291,77 @@ async function listPushDevices() {
   return devices;
 }
 
+function isApnsDeviceToken(value) {
+  return /^[0-9a-f]{64,}$/i.test(String(value || ""));
+}
+
+function shortPushError(error) {
+  return String(error?.message || error)
+    .replace(/\s+/g, " ")
+    .slice(0, 160);
+}
+
 function apnsKeyPem() {
   let raw = process.env.APNS_KEY_P8 || "";
-  raw = raw.trim().replace(/\\n/g, "\n");
-  if (raw) return raw;
-  try {
-    return fs.readFileSync(path.join(__dirname, "apns.p8"), "utf8");
-  } catch {
-    return "";
+  raw = raw.trim().replace(/^\uFEFF/, "");
+  if (
+    (raw.startsWith('"') && raw.endsWith('"')) ||
+    (raw.startsWith("'") && raw.endsWith("'")) ||
+    (raw.startsWith("`") && raw.endsWith("`"))
+  ) {
+    raw = raw.slice(1, -1).trim();
   }
+  raw = raw.replace(/\\n/g, "\n").replace(/\r/g, "").trim();
+  if (!raw) {
+    try {
+      raw = fs.readFileSync(path.join(__dirname, "apns.p8"), "utf8").trim();
+    } catch {
+      return "";
+    }
+  }
+  if (!raw.includes("BEGIN")) {
+    const body = raw.replace(/\s/g, "").match(/.{1,64}/g)?.join("\n") || raw;
+    raw = `-----BEGIN PRIVATE KEY-----\n${body}\n-----END PRIVATE KEY-----`;
+  }
+  return raw;
 }
 
 function apnsJwt() {
   const pem = apnsKeyPem();
-  const keyId = process.env.APNS_KEY_ID || "7AGFZKQQ83";
-  const teamId = process.env.APNS_TEAM_ID || "68VK3CMGBQ";
+  const keyId = String(process.env.APNS_KEY_ID || "7AGFZKQQ83").trim();
+  const teamId = String(process.env.APNS_TEAM_ID || "68VK3CMGBQ").trim();
   if (!pem || !keyId || !teamId) return "";
-  const header = b64url(JSON.stringify({alg: "ES256", kid: keyId}));
-  const payload = b64url(
-    JSON.stringify({iss: teamId, iat: Math.floor(Date.now() / 1000)}),
-  );
-  const key = crypto.createPrivateKey(pem);
-  const sig = crypto.sign("SHA256", Buffer.from(`${header}.${payload}`), {
-    key,
-    dsaEncoding: "ieee-p1363",
-  });
-  return `${header}.${payload}.${b64url(sig)}`;
+  try {
+    const header = b64url(JSON.stringify({alg: "ES256", kid: keyId}));
+    const payload = b64url(
+      JSON.stringify({iss: teamId, iat: Math.floor(Date.now() / 1000)}),
+    );
+    const key = crypto.createPrivateKey(pem);
+    const sig = crypto.sign("SHA256", Buffer.from(`${header}.${payload}`), {
+      key,
+      dsaEncoding: "ieee-p1363",
+    });
+    return `${header}.${payload}.${b64url(sig)}`;
+  } catch (error) {
+    throw new Error(`apns_key:${shortPushError(error)}`);
+  }
 }
 
-function sendApnsAlert({deviceToken, title, body}) {
-  const jwt = apnsJwt();
-  const bundleId = process.env.APNS_BUNDLE_ID || "com.armenianbible.bible";
+function sendApnsAlert({
+  deviceToken,
+  title,
+  body,
+  host = "https://api.push.apple.com",
+}) {
+  let jwt = "";
+  try {
+    jwt = apnsJwt();
+  } catch (error) {
+    return Promise.reject(error);
+  }
+  const bundleId = String(
+    process.env.APNS_BUNDLE_ID || "com.armenianbible.bible",
+  ).trim();
   if (!jwt || !deviceToken) {
     return Promise.reject(new Error("apns_not_configured"));
   }
@@ -334,8 +374,14 @@ function sendApnsAlert({deviceToken, title, body}) {
     type: "verse_of_day",
   });
   return new Promise((resolve, reject) => {
-    const client = http2.connect("https://api.push.apple.com");
-    client.on("error", reject);
+    const client = http2.connect(host);
+    const fail = (error) => {
+      try {
+        client.close();
+      } catch {}
+      reject(error);
+    };
+    client.on("error", fail);
     const req = client.request({
       ":method": "POST",
       ":path": `/3/device/${deviceToken}`,
@@ -361,12 +407,22 @@ function sendApnsAlert({deviceToken, title, body}) {
         reject(new Error(data || `apns_${status}`));
       });
     });
-    req.on("error", (error) => {
-      client.close();
-      reject(error);
-    });
+    req.on("error", fail);
     req.end(payload);
   });
+}
+
+async function sendApnsAlertWithFallback(args) {
+  try {
+    await sendApnsAlert({...args, host: "https://api.push.apple.com"});
+  } catch (error) {
+    const message = String(error.message || error);
+    if (!message.includes("BadDeviceToken")) throw error;
+    await sendApnsAlert({
+      ...args,
+      host: "https://api.sandbox.push.apple.com",
+    });
+  }
 }
 
 async function sendVerseNotification({text, reference}) {
@@ -391,35 +447,62 @@ async function sendVerseNotification({text, reference}) {
 
     const devices = await listPushDevices();
     const seenApns = new Set();
+    const seenIosFcm = new Set();
     let iosSent = 0;
     for (const device of devices) {
-      const apnsToken = device.apnsToken;
-      if (!apnsToken || seenApns.has(apnsToken)) continue;
-      seenApns.add(apnsToken);
-      try {
-        await sendApnsAlert({
-          deviceToken: apnsToken,
-          title,
-          body: shortBody,
-        });
-        sent += 1;
-        iosSent += 1;
-      } catch (error) {
-        errors.push(String(error.message || error));
+      const ios =
+        device.platform === "ios" || isApnsDeviceToken(device.apnsToken);
+      const apnsToken = isApnsDeviceToken(device.apnsToken)
+        ? device.apnsToken
+        : "";
+      let delivered = false;
+      if (apnsToken && !seenApns.has(apnsToken)) {
+        seenApns.add(apnsToken);
+        try {
+          await sendApnsAlertWithFallback({
+            deviceToken: apnsToken,
+            title,
+            body: shortBody,
+          });
+          sent += 1;
+          iosSent += 1;
+          delivered = true;
+        } catch (error) {
+          errors.push(shortPushError(error));
+        }
+      }
+      if (!delivered && ios && device.token && !seenIosFcm.has(device.token)) {
+        seenIosFcm.add(device.token);
+        try {
+          await sendFcmV1(accessToken, projectId, {
+            token: device.token,
+            ...payload,
+          });
+          sent += 1;
+          iosSent += 1;
+        } catch (error) {
+          errors.push(shortPushError(error));
+        }
       }
     }
 
     if (sent === 0) {
       throw new Error(errors[0] || "fcm_failed");
     }
-    if (iosSent === 0 && errors.some((item) => item.includes("apns_not_configured"))) {
+    if (
+      iosSent === 0 &&
+      errors.some(
+        (item) =>
+          item.includes("apns_not_configured") || item.startsWith("apns_key:"),
+      )
+    ) {
       return "fcm_no_ios_key";
     }
-    if (iosSent === 0 && seenApns.size === 0) {
+    if (iosSent === 0 && seenApns.size === 0 && seenIosFcm.size === 0) {
       return "fcm_no_ios_device";
     }
     if (iosSent === 0) {
-      return "fcm_no_ios";
+      return `fcm_no_ios:${errors[0] || "apple"}`;
     }
     return "fcm";
   }
@@ -1192,14 +1275,18 @@ async function handleTelegram(req, res, body) {
       let pushNote = "";
       try {
         const pushResult = await sendVerseNotification(parsed);
-        pushNote =
-          pushResult === "fcm_no_ios_key"
-            ? " Android-ին գնաց։ iPhone-ին չգնաց. Render-ում դրեք APNS_KEY_P8։"
-            : pushResult === "fcm_no_ios_device"
-              ? " Android-ին գնաց։ iPhone-ին չգնաց. TestFlight հավելվածը մեկ անգամ բացեք և թույլ տվեք ծանուցումները։"
-              : pushResult === "fcm_no_ios"
-                ? " Android-ին գնաց։ iPhone ծանուցումը չանցավ Apple-ից։"
-                : " Հաղորդագրությունը ուղարկվեց հեռախոսներին։";
+        if (pushResult === "fcm_no_ios_key") {
+          pushNote =
+            " Android-ին գնաց։ iPhone-ին չգնաց. Render-ում APNS_KEY_P8-ը սխալ ֆորմատով է։";
+        } else if (pushResult === "fcm_no_ios_device") {
+          pushNote =
+            " Android-ին գնաց։ iPhone-ին չգնաց. TestFlight հավելվածը մեկ անգամ բացեք և թույլ տվեք ծանուցումները։";
+        } else if (String(pushResult).startsWith("fcm_no_ios")) {
+          const reason = String(pushResult).slice("fcm_no_ios:".length);
+          pushNote = ` Android-ին գնաց։ iPhone ծանուցումը չանցավ Apple-ից։ ${reason}`;
+        } else {
+          pushNote = " Հաղորդագրությունը ուղարկվեց հեռախոսներին։";
+        }
       } catch (pushError) {
         console.error(pushError);
         pushNote =
