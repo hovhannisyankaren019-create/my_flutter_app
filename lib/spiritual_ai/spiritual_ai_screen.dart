@@ -124,11 +124,13 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
           break;
         }
       }
-      final followUp = retriever.looksLikeFollowUp(
-        text,
-        hasPriorTurn: previous.any((item) => item.role == 'assistant'),
-        previousUser: lastUserText,
-      );
+      final verseFollow = retriever.looksLikeVerseFollowUp(text);
+      final followUp = verseFollow ||
+          retriever.looksLikeFollowUp(
+            text,
+            hasPriorTurn: previous.any((item) => item.role == 'assistant'),
+            previousUser: lastUserText,
+          );
       final wantsHistory = retriever.wantsRestrictedSources(text);
       if (retriever.looksLikeImageAsk(text) && !wantsHistory) {
         setState(() {
@@ -141,7 +143,7 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
         });
         return;
       }
-      final searchQuery = followUp ? _searchContext(text, previous) : text;
+      final searchQuery = verseFollow ? _searchContext(text, previous) : text;
       final history = _apiHistory(
         previous,
         followUp: followUp,

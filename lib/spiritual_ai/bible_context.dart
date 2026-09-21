@@ -1049,6 +1049,32 @@ class BibleContextRetriever {
     return false;
   }
 
+  bool looksLikeVerseFollowUp(String question) {
+    final t = question.toLowerCase().trim();
+    if (t.isEmpty) return false;
+    if (wantsMoreVerses(t)) return true;
+    return t.contains('այդ համար') ||
+        t.contains('այս համար') ||
+        t.contains('էդ համար') ||
+        t.contains('դրա համար') ||
+        t.contains('նույն համար') ||
+        t.contains('այդ հատված') ||
+        t.contains('էդ հատված') ||
+        t.contains('այս հատված') ||
+        t.contains('այդ համարը') ||
+        t.contains('էդ համարը');
+  }
+
+  bool shouldAttachPassages(String question, {required bool followUp}) {
+    if (quoteExplicitReferences(question).matched) return true;
+    if (wantsVerseOnly(question) || wantsLocateVerse(question)) return true;
+    if (wantsMoreVerses(question) || looksLikeVerseFollowUp(question)) {
+      return true;
+    }
+    if (followUp) return false;
+    return false;
+  }
+
   bool looksLikeFollowUp(
     String question, {
     required bool hasPriorTurn,
@@ -1056,36 +1082,16 @@ class BibleContextRetriever {
   }) {
     if (!hasPriorTurn) return false;
     if (_isStandaloneQuestion(question)) return false;
+    if (looksLikeVerseFollowUp(question)) return true;
     final t = question.toLowerCase().trim();
     if (t.isEmpty) return false;
-
-    if (wantsMoreVerses(t)) return true;
-    if (t.contains('շարունակ') ||
-        t.contains('այդ համար') ||
-        t.contains('այս համար') ||
-        t.contains('էդ համար') ||
-        t.contains('դրա համար') ||
-        t.contains('նույն համար') ||
-        t.contains('այդ հատված') ||
-        t.contains('էդ հատված') ||
-        t.contains('այս հատված')) {
-      return true;
-    }
-
-    final pointsBack = t.contains('այդ') ||
-        t.contains('էդ') ||
-        t.contains('դրա') ||
+    if (t.contains('շարունակ')) return true;
+    if (t.length > 28) return false;
+    return t.contains('դրա') ||
         t.contains('նրա') ||
-        t.contains('նույն');
-    if (!pointsBack) return false;
-
-    if (t.length <= 40) return true;
-    return t.contains('բացատր') ||
-        t.contains('մեկնաբան') ||
-        t.contains('նշանակում') ||
         t.contains('ինչու') ||
         t.contains('ինչի') ||
-        t.contains('էլի');
+        t == 'էլի';
   }
 
   bool _isStandaloneQuestion(String question) {

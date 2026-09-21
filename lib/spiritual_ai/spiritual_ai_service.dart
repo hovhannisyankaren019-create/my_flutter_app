@@ -52,7 +52,12 @@ class SpiritualAiService {
         text: BibleContextRetriever.imagesOffReply,
       );
     }
-    final passages = retriever.passagesForQuestion(lookupText);
+    final found = retriever.passagesForQuestion(lookupText);
+    final attachPassages = retriever.shouldAttachPassages(
+      trimmed,
+      followUp: followUp,
+    );
+    final passages = attachPassages ? found : const <BiblePassage>[];
     final quote = retriever.quoteExplicitReferences(trimmed);
     if (quote.matched &&
         !retriever.wantsCommentary(trimmed) &&
