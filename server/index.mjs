@@ -425,6 +425,8 @@ async function sendApnsAlertWithFallback(args) {
   }
 }
 
+const ANDROID_VERSE_PUSH = false;
+
 async function sendVerseNotification({text, reference}) {
   const title = "Օրվա խոսք";
   const shortBody = "Օրվա խոսք";
@@ -435,14 +437,16 @@ async function sendVerseNotification({text, reference}) {
     const accessToken = await firebaseMessagingToken(sa);
     let sent = 0;
     const errors = [];
-    try {
-      await sendFcmV1(accessToken, projectId, {
-        topic: "all_users",
-        ...payload,
-      });
-      sent += 1;
-    } catch (error) {
-      errors.push(String(error.message || error));
+    if (ANDROID_VERSE_PUSH) {
+      try {
+        await sendFcmV1(accessToken, projectId, {
+          topic: "all_users",
+          ...payload,
+        });
+        sent += 1;
+      } catch (error) {
+        errors.push(String(error.message || error));
+      }
     }
 
     const devices = await listPushDevices();
@@ -487,7 +491,18 @@ async function sendVerseNotification({text, reference}) {
     }
 
     if (sent === 0) {
-      throw new Error(errors[0] || "fcm_failed");
+      if (
+        errors.some(
+          (item) =>
+            item.includes("apns_not_configured") || item.startsWith("apns_key:"),
+        )
+      ) {
+        return "fcm_no_ios_key";
+      }
+      if (seenApns.size === 0 && seenIosFcm.size === 0) {
+        return "fcm_no_ios_device";
+      }
+      return `fcm_no_ios:${errors[0] || "apple"}`;
     }
     if (
       iosSent === 0 &&
@@ -508,7 +523,7 @@ async function sendVerseNotification({text, reference}) {
   }
 
   const serverKey = process.env.FCM_SERVER_KEY || "";
-  if (serverKey) {
+  if (serverKey && ANDROID_VERSE_PUSH) {
     const res = await fetch("https://fcm.googleapis.com/fcm/send", {
       method: "POST",
       headers: {
@@ -1277,15 +1292,16 @@ async function handleTelegram(req, res, body) {
         const pushResult = await sendVerseNotification(parsed);
         if (pushResult === "fcm_no_ios_key") {
           pushNote =
-            " Android-ին գնաց։ iPhone-ին չգնաց. Render-ում APNS_KEY_P8-ը սխալ ֆորմատով է։";
+            " iPhone-ին չգնաց. Render-ում APNS_KEY_P8-ը սխալ ֆորմատով է։ Android-ը ժամանակավոր անջատված է։";
         } else if (pushResult === "fcm_no_ios_device") {
           pushNote =
-            " Android-ին գնաց։ iPhone-ին չգնաց. TestFlight հավելվածը մեկ անգամ բացեք և թույլ տվեք ծանուցումները։";
+            " iPhone-ին չգնաց. TestFlight հավելվածը մեկ անգամ բացեք և թույլ տվեք ծանուցումները։ Android-ը ժամանակավոր անջատված է։";
         } else if (String(pushResult).startsWith("fcm_no_ios")) {
           const reason = String(pushResult).slice("fcm_no_ios:".length);
-          pushNote = ` Android-ին գնաց։ iPhone ծանուցումը չանցավ Apple-ից։ ${reason}`;
+          pushNote = ` iPhone ծանուցումը չանցավ Apple-ից։ ${reason}`;
         } else {
-          pushNote = " Հաղորդագրությունը ուղարկվեց հեռախոսներին։";
+          pushNote =
+            " iPhone-ին ուղարկվեց։ Android-ը ժամանակավոր անջատված է։";
         }
       } catch (pushError) {
         console.error(pushError);
