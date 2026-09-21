@@ -337,7 +337,7 @@ function apnsKeyPem() {
   return `${begin || "-----BEGIN PRIVATE KEY-----"}\n${wrapped}\n${end || "-----END PRIVATE KEY-----"}`;
 }
 
-function apnsPushCheckText() {
+async function apnsPushCheckText() {
   const keyId = appleEnvId(process.env.APNS_KEY_ID, "");
   const teamId = appleEnvId(process.env.APNS_TEAM_ID, "");
   const bundle = String(
@@ -366,6 +366,19 @@ function apnsPushCheckText() {
   }
   if (keyId && teamId && keyId === teamId) {
     lines.push("KEY_ID և TEAM_ID նույնն են. դա սխալ է։");
+  }
+  try {
+    const devices = await listPushDevices();
+    const ios = devices.filter(
+      (device) => device.platform === "ios" || isApnsDeviceToken(device.apnsToken),
+    );
+    lines.push(`iPhone գրանցված: ${ios.length}`);
+    lines.push(`iPhone FCM token: ${ios.filter((device) => device.token).length}`);
+    lines.push(
+      `iPhone APNs token: ${ios.filter((device) => isApnsDeviceToken(device.apnsToken)).length}`,
+    );
+  } catch (error) {
+    lines.push(`սարքեր: ${shortPushError(error)}`);
   }
   return lines.join("\n");
 }
@@ -404,13 +417,11 @@ function apnsJwt(keyId, teamId) {
     const payload = b64url(
       JSON.stringify({iss, iat: Math.floor(Date.now() / 1000)}),
     );
-    const signer = crypto.createSign("SHA256");
-    signer.update(`${header}.${payload}`);
-    const raw = signer.sign({
+    let sig = crypto.sign("sha256", Buffer.from(`${header}.${payload}`), {
       key,
       dsaEncoding: "ieee-p1363",
     });
-    const sig = ecdsaSignatureToJose(raw);
+    if (sig.length !== 64) sig = ecdsaSignatureToJose(sig);
     return `${header}.${payload}.${b64url(sig)}`;
   } catch (error) {
     throw new Error(`apns_key:${shortPushError(error)}`);
@@ -1332,7 +1343,7 @@ async function handleTelegram(req, res, body) {
       await sendTelegram(chatId, "Այս հրամանը միայն ուսուցիչների համար է։");
       return;
     }
-    await sendTelegram(chatId, apnsPushCheckText());
+    await sendTelegram(chatId, await apnsPushCheckText());
     return;
   }
 
@@ -1389,18 +1400,20 @@ async function handleTelegram(req, res, body) {
         } else if (pushResult === "fcm_no_ios_device") {
           pushNote =
             " iPhone-ին չգնաց. TestFlight հավելվածը մեկ անգամ բացեք և թույլ տվեք ծանուցումները։ Android-ը ժամանակավոր անջատված է։";
-        } else if (String(pushResult).includes("not_ec") || String(pushResult).includes("apns_key:")) {
-          pushNote =
-            " iPhone չգնաց. APNS_KEY_P8-ը Apple-ի .p8 չէ կամ վատ է պատճենված։ Notepad-ով բացիր AuthKey_….p8 ֆայլը և ամբողջը դրիր Render-ում, նույն Key ID-ով։";
-        } else if (String(pushResult).includes("InvalidProviderToken")) {
-          pushNote =
-            " iPhone չգնաց. Apple-ը բանալին չի ճանաչում (InvalidProviderToken)։ Render-ում APNS_KEY_ID-ը պետք է լինի AuthKey_XXXX.p8-ի 10 նիշը, APNS_TEAM_ID-ը՝ Membership-ի Team ID, APNS_KEY_P8-ը՝ հենց այդ ֆայլը BEGIN-ից END։ Firebase JSON այդ դաշտում մի դրիր։";
-        } else if (String(pushResult).includes("BadEnvironmentKeyInToken")) {
-          pushNote =
-            " iPhone չգնաց. Key-ը միայն Sandbox է, TestFlight-ը Production է։ Apple Keys-ում բանալու APNs-ը դարձրու Sandbox & Production, կամ նոր Key ստեղծիր երկուսով էլ։";
         } else if (String(pushResult).startsWith("fcm_no_ios")) {
           const reason = String(pushResult).slice("fcm_no_ios:".length);
-          pushNote = ` iPhone ծանուցումը չանցավ Apple-ից։ ${reason}`;
+          if (reason.includes("THIRD_PARTY_AUTH") || reason.includes("Auth error from APNS")) {
+            pushNote =
+              ` iPhone FCM չանցավ. Firebase → Cloud Messaging → iOS → APNs Authentication Key. Բարձրացրու Production .p8-ը։ ${reason}`;
+          } else if (reason.includes("InvalidProviderToken")) {
+            pushNote =
+              ` iPhone չգնաց. Production Key ID-ն ու .p8-ը իրար չեն պատկանում։ Downloads-ում բացիր այն AuthKey ֆայլը, որի անունը համընկնում է KEY_ID-ի հետ (C5…2X), և նորից դրիր APNS_KEY_P8։ ${reason}`;
+          } else if (reason.includes("BadEnvironmentKeyInToken")) {
+            pushNote =
+              ` iPhone չգնաց. Այս Key-ը Sandbox է, TestFlight-ը Production է։ ${reason}`;
+          } else {
+            pushNote = ` iPhone ծանուցումը չանցավ։ ${reason}`;
+          }
         } else {
           pushNote =
             " iPhone-ին ուղարկվեց։ Android-ը ժամանակավոր անջատված է։";
