@@ -219,8 +219,11 @@ function versePushPayload({title, shortBody, text, reference}) {
     },
     android: {
       priority: "high",
+      collapse_key: "verse_of_day",
       notification: {
         channel_id: "high_importance_channel",
+        tag: "verse_of_day",
+        notification_count: 1,
       },
     },
     apns: {
@@ -374,41 +377,33 @@ async function sendVerseNotification({text, reference}) {
   const sa = serviceAccountFromEnv();
   if (sa?.client_email && sa?.private_key) {
     const accessToken = await firebaseMessagingToken(sa);
-    let sent = 0;
-    const errors = [];
     try {
-      await sendFcmV1(accessToken, projectId, {topic: "all_users", ...payload});
-      sent += 1;
-    } catch (error) {
-      errors.push(String(error.message || error));
-    }
-    const devices = await listPushDevices();
-    for (const device of devices) {
-      if (device.token) {
+      await sendFcmV1(accessToken, projectId, {
+        topic: "all_users",
+        ...payload,
+      });
+      return "fcm";
+    } catch (topicError) {
+      const devices = await listPushDevices();
+      let sent = 0;
+      const errors = [String(topicError.message || topicError)];
+      const seen = new Set();
+      for (const device of devices) {
+        const token = device.token;
+        if (!token || seen.has(token)) continue;
+        seen.add(token);
         try {
-          await sendFcmV1(accessToken, projectId, {token: device.token, ...payload});
+          await sendFcmV1(accessToken, projectId, {token, ...payload});
           sent += 1;
         } catch (error) {
           errors.push(String(error.message || error));
         }
       }
-      if (device.apnsToken) {
-        try {
-          await sendApnsAlert({
-            deviceToken: device.apnsToken,
-            title,
-            body: shortBody,
-          });
-          sent += 1;
-        } catch (error) {
-          errors.push(String(error.message || error));
-        }
+      if (sent === 0) {
+        throw new Error(errors[0] || "fcm_failed");
       }
+      return "fcm";
     }
-    if (sent === 0) {
-      throw new Error(errors[0] || "fcm_failed");
-    }
-    return "fcm";
   }
 
   const serverKey = process.env.FCM_SERVER_KEY || "";
@@ -1039,7 +1034,7 @@ function rememberTelegram(chatId, role, content) {
   telegramHistory.set(chatId, list.slice(-8));
 }
 
-async function sendTelegram(chatId, text) {
+async function sendTelegram(chatId, text, {silent = false} = {}) {
   const token = process.env.TELEGRAM_BOT_TOKEN || "";
   if (!token) return null;
   const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
@@ -1048,6 +1043,7 @@ async function sendTelegram(chatId, text) {
     body: JSON.stringify({
       chat_id: chatId,
       text: text.slice(0, 4000),
+      disable_notification: silent,
     }),
   });
   const data = await res.json().catch(() => ({}));
@@ -1191,6 +1187,7 @@ async function handleTelegram(req, res, body) {
         parsed.reference
           ? `Օրվա Խոսքը թարմացվեց։\n${parsed.reference}\n${pushNote}`.trim()
           : `Օրվա Խոսքը թարմացվեց։\n${pushNote}`.trim(),
+        {silent: true},
       );
     } catch (error) {
       console.error(error);
