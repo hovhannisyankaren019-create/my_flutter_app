@@ -1141,19 +1141,36 @@ class BibleContextRetriever {
 
   bool wantsWordMeaning(String question) {
     final t = question.toLowerCase();
-    return t.contains('սթրոնգ') ||
+    if (t.contains('սթրոնգ') ||
         t.contains('ստրոնգ') ||
         t.contains('strong') ||
-        t.contains('բառի իմաստ') ||
-        t.contains('բառի նշանակ') ||
-        t.contains('բառը ինչ') ||
-        t.contains('ինչ է նշանակում այս բառ') ||
-        t.contains('ինչ ա նշանակում այս բառ') ||
-        t.contains('եբրայերեն') ||
+        t.contains('բառարան')) {
+      return true;
+    }
+    if (t.contains('եբրայերեն') ||
         t.contains('եբրայեցերեն') ||
-        t.contains('հունարեն բառ') ||
+        t.contains('հունարեն') ||
         t.contains('հունարէն') ||
-        t.contains('արմատը');
+        t.contains('արմատ') ||
+        t.contains('բնագիր') ||
+        t.contains('թարգման')) {
+      return true;
+    }
+    if (t.contains('իմաստ') ||
+        t.contains('նշանակում') ||
+        t.contains('նշանակութ') ||
+        t.contains('բառը') ||
+        t.contains('բառի')) {
+      return true;
+    }
+    if (t.contains('ինչ է նշանակում') ||
+        t.contains('ինչ ա նշանակում') ||
+        t.contains('ինչ է նշանակում') ||
+        t.contains('ինչ է այդ բառ') ||
+        t.contains('ինչ ա այդ բառ')) {
+      return true;
+    }
+    return false;
   }
 
   bool wantsInterpretation(String question) {
