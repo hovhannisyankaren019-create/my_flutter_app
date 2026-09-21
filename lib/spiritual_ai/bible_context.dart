@@ -140,6 +140,10 @@ class BibleContextRetriever {
     'հաւատ',
     'հոգևոր',
     'հոգեւոր',
+    'սթրոնգ',
+    'ստրոնգ',
+    'եբրայերեն',
+    'հունարեն',
     'սաղմոս',
     'առակ',
     'հայտնութ',
@@ -229,6 +233,14 @@ class BibleContextRetriever {
     'Յովհաննես': 'Յովհաննէս',
     'Հովհաննու': 'Յովհաննէս',
     'Հովհաննեսի': 'Յովհաննէս',
+    'Հովհաննեսի ավետարան': 'Յովհաննէս',
+    'Ավետարան ըստ Հովհաննեսի': 'Յովհաննէս',
+    'Աւետարան ըստ Յովհաննէսի': 'Յովհաննէս',
+    'Հովհաննեսի ընդհանրական': 'Ա Յովհաննէս',
+    'Հովհաննեսի ընդհանրական թուղթ': 'Ա Յովհաննէս',
+    'Հովհաննեսի առաջին թուղթ': 'Ա Յովհաննէս',
+    'Հովհաննեսի երկրորդ թուղթ': 'Բ Յովհաննէս',
+    'Հովհաննեսի երրորդ թուղթ': 'Գ Յովհաննէս',
     'Մատթեոս': 'Մատթէոս',
     'Մատթէոսի': 'Մատթէոս',
     'Մատթեոսի': 'Մատթէոս',
@@ -1140,6 +1152,23 @@ class BibleContextRetriever {
                 t.contains('պատմ')));
   }
 
+  bool wantsWordMeaning(String question) {
+    final t = question.toLowerCase();
+    return t.contains('սթրոնգ') ||
+        t.contains('ստրոնգ') ||
+        t.contains('strong') ||
+        t.contains('բառի իմաստ') ||
+        t.contains('բառի նշանակ') ||
+        t.contains('բառը ինչ') ||
+        t.contains('ինչ է նշանակում այս բառ') ||
+        t.contains('ինչ ա նշանակում այս բառ') ||
+        t.contains('եբրայերեն') ||
+        t.contains('եբրայեցերեն') ||
+        t.contains('հունարեն բառ') ||
+        t.contains('հունարէն') ||
+        t.contains('արմատը');
+  }
+
   bool wantsInterpretation(String question) {
     final t = question.toLowerCase();
     return t.contains('մեկնաբան') ||
@@ -1151,6 +1180,7 @@ class BibleContextRetriever {
   bool wantsRestrictedSources(String question) {
     return wantsHistoricalFacts(question) ||
         wantsInterpretation(question) ||
+        wantsWordMeaning(question) ||
         wantsAutoHistorical(question);
   }
 
@@ -1409,7 +1439,7 @@ class BibleContextRetriever {
       if (name.length < 3 && name != 'ոբ' && name != 'հոբ') continue;
       final escaped = RegExp.escape(name);
       final pattern = RegExp(
-        '(^|[^ա-ֆa-z0-9])$escaped(?:ի)?(?:\\s*(?:գիրք|գլուխ))?\\s*(\\d+)\\s*(?:[:]|համար\\s*|հատված\\s*|հատուած\\s*)(\\d+)(?:\\s*[-–]\\s*(\\d+))?',
+        '(^|[^ա-ֆa-z0-9])(?<!(?:[աբգդ]|[1-4])\\.?\\s)$escaped(?:ի)?(?:\\s*(?:գիրք|գլուխ|ավետարան|աւետարան))?\\s*(\\d+)\\s*(?:[:]|համար\\s*|հատված\\s*|հատուած\\s*)(\\d+)(?:\\s*[-–]\\s*(\\d+))?',
       );
       for (final match in pattern.allMatches(q)) {
         final start = match.start + (match.group(1)?.length ?? 0);

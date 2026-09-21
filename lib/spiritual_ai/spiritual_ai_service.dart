@@ -81,7 +81,10 @@ class SpiritualAiService {
       askMessage =
           '$trimmed\n\n(Համակարգ. այս թեմայով հավելվածի Աստվածաշնչում համար չգտնվեց։ Համարներ մի հորինիր, բայց հարցին միևնույն է պատասխանիր հայերենով։)';
     }
-    if (retriever.wantsRestrictedSources(trimmed)) {
+    if (retriever.wantsWordMeaning(trimmed)) {
+      askMessage =
+          '$askMessage\n\n(Համակարգ. բացատրիր այս բառը ըստ Սթրոնգի բառարանի՝ միայն հայերենով։ Նշիր Սթրոնգի համարը, եբրայերեն է թե հունարեն, հայերեն արտասանությունը և իմաստները, հետո Աստվածաշնչյան գործածությունը։ Անգլերեն բառ մի գրիր։ Կարճ մի գրիր։)';
+    } else if (retriever.wantsRestrictedSources(trimmed)) {
       askMessage =
           '$askMessage\n\n(Համակարգ. նախ հստակ պատասխանիր հարցին հայերենով, հետո լիարժեք բացատրիր Աստվածաշնչով։ Աղբյուրների անունները գրիր միայն հայերենով։ Թիվ մի հորինիր։ Օտար բառ մի գրիր։ Կարճ մի գրիր։)';
     } else if (retriever.wantsIdentity(trimmed)) {
