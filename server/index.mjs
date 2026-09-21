@@ -337,6 +337,39 @@ function apnsKeyPem() {
   return `${begin || "-----BEGIN PRIVATE KEY-----"}\n${wrapped}\n${end || "-----END PRIVATE KEY-----"}`;
 }
 
+function apnsPushCheckText() {
+  const keyId = appleEnvId(process.env.APNS_KEY_ID, "");
+  const teamId = appleEnvId(process.env.APNS_TEAM_ID, "");
+  const bundle = String(
+    process.env.APNS_BUNDLE_ID || "com.armenianbible.bible",
+  ).trim();
+  const pem = apnsKeyPem();
+  const lines = [
+    `KEY_ID: ${keyId ? `${keyId.length} նիշ, ${keyId.slice(0, 2)}…${keyId.slice(-2)}` : "դատարկ"}`,
+    `TEAM_ID: ${teamId ? `${teamId.length} նիշ, ${teamId.slice(0, 2)}…${teamId.slice(-2)}` : "դատարկ"}`,
+    `BUNDLE: ${bundle}`,
+    `P8 BEGIN: ${pem.includes("BEGIN PRIVATE KEY") ? "այո" : "ոչ"}`,
+  ];
+  try {
+    const key = crypto.createPrivateKey(pem);
+    lines.push(
+      `P8 տեսակ: ${key.asymmetricKeyType} ${key.asymmetricKeyDetails?.namedCurve || ""}`.trim(),
+    );
+  } catch (error) {
+    lines.push(`P8 չի կարդացվում: ${shortPushError(error)}`);
+  }
+  if (keyId.length !== 10) {
+    lines.push("KEY_ID-ը պետք է լինի ուղիղ 10 նիշ, ինչպես AuthKey_XXXXXXXXXX.p8 ֆայլի անվան մեջ։");
+  }
+  if (teamId.length !== 10) {
+    lines.push("TEAM_ID-ը պետք է լինի ուղիղ 10 նիշ Membership էջից։");
+  }
+  if (keyId && teamId && keyId === teamId) {
+    lines.push("KEY_ID և TEAM_ID նույնն են. դա սխալ է։");
+  }
+  return lines.join("\n");
+}
+
 function apnsJwt(keyId, teamId) {
   const pem = apnsKeyPem();
   const kid = appleEnvId(keyId, appleEnvId(process.env.APNS_KEY_ID, "7AGFZKQQ83"));
@@ -1273,6 +1306,15 @@ async function handleTelegram(req, res, body) {
     return;
   }
 
+  if (cmd === "pushcheck") {
+    if (!isAdmin(userId)) {
+      await sendTelegram(chatId, "Այս հրամանը միայն ուսուցիչների համար է։");
+      return;
+    }
+    await sendTelegram(chatId, apnsPushCheckText());
+    return;
+  }
+
   if (cmd === "cancel") {
     teachState.delete(chatId);
     verseState.delete(chatId);
@@ -1326,7 +1368,10 @@ async function handleTelegram(req, res, body) {
         } else if (pushResult === "fcm_no_ios_device") {
           pushNote =
             " iPhone-ին չգնաց. TestFlight հավելվածը մեկ անգամ բացեք և թույլ տվեք ծանուցումները։ Android-ը ժամանակավոր անջատված է։";
-        } else if (String(pushResult).includes("InvalidProviderToken") || String(pushResult).includes("not_ec")) {
+        } else if (String(pushResult).includes("not_ec") || String(pushResult).includes("apns_key:")) {
+          pushNote =
+            " iPhone չգնաց. APNS_KEY_P8-ը Apple-ի .p8 չէ կամ վատ է պատճենված։ Notepad-ով բացիր AuthKey_….p8 ֆայլը և ամբողջը դրիր Render-ում, նույն Key ID-ով։";
+        } else if (String(pushResult).includes("InvalidProviderToken")) {
           pushNote =
             " iPhone չգնաց. Apple-ը բանալին չի ճանաչում (InvalidProviderToken)։ Render-ում APNS_KEY_ID-ը պետք է լինի AuthKey_XXXX.p8-ի 10 նիշը, APNS_TEAM_ID-ը՝ Membership-ի Team ID, APNS_KEY_P8-ը՝ հենց այդ ֆայլը BEGIN-ից END։ Firebase JSON այդ դաշտում մի դրիր։";
         } else if (String(pushResult).includes("BadEnvironmentKeyInToken")) {
