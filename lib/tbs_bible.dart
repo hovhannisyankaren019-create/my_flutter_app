@@ -79,6 +79,7 @@ class TbsBible {
 
   static final Map<String, Map<int, String>> textByBook = {};
   static final Map<String, int> chapterCounts = {};
+  static final Map<String, String> displayNames = {};
   static Future<void>? _loading;
 
   static Future<void> ensureLoaded() {
@@ -93,6 +94,7 @@ class TbsBible {
     });
     final texts = parsed['text'] as Map<String, dynamic>;
     final counts = parsed['counts'] as Map<String, dynamic>;
+    final titles = parsed['titles'] as Map<String, dynamic>;
     textByBook
       ..clear()
       ..addAll(
@@ -116,6 +118,9 @@ class TbsBible {
           (book, count) => MapEntry(book, count is int ? count : int.parse('$count')),
         ),
       );
+    displayNames
+      ..clear()
+      ..addAll(titles.map((book, title) => MapEntry(book, '$title')));
   }
 
   static String? chapterText(String bookName, int chapterNumber) {
@@ -125,6 +130,20 @@ class TbsBible {
   static int chapterCount(String bookName, int fallback) {
     return chapterCounts[bookName] ?? fallback;
   }
+
+  static String displayName(String bookName) {
+    return _readableTitle(displayNames[bookName] ?? bookName);
+  }
+
+  static String _readableTitle(String title) {
+    final lower = title.toLowerCase();
+    if (lower.isEmpty) return title;
+    return lower
+        .split(RegExp(r'\s+'))
+        .where((word) => word.isNotEmpty)
+        .map((word) => '${word[0].toUpperCase()}${word.substring(1)}')
+        .join(' ');
+  }
 }
 
 Map<String, dynamic> _parseTbsAsset(Map<String, dynamic> args) {
@@ -133,9 +152,12 @@ Map<String, dynamic> _parseTbsAsset(Map<String, dynamic> args) {
   final books = data['books'] as List<dynamic>;
   final textByBook = <String, Map<int, String>>{};
   final counts = <String, int>{};
+  final titles = <String, String>{};
 
   for (var i = 0; i < books.length && i < names.length; i++) {
     final bookName = names[i];
+    final tbsTitle =
+        (books[i] as Map<String, dynamic>)['title'] as String? ?? bookName;
     final chapters =
         (books[i] as Map<String, dynamic>)['chapters'] as List<dynamic>;
     final chapterMap = <int, String>{};
@@ -156,10 +178,12 @@ Map<String, dynamic> _parseTbsAsset(Map<String, dynamic> args) {
     }
     textByBook[bookName] = chapterMap;
     counts[bookName] = chapterMap.length;
+    titles[bookName] = tbsTitle;
   }
 
   return {
     'text': textByBook,
     'counts': counts,
+    'titles': titles,
   };
 }

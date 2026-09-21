@@ -21,25 +21,34 @@ class FirebaseMessagingService {
   static final FirebaseMessaging _messaging = FirebaseMessaging.instance;
 
   static Future<void> initialize() async {
-    await _messaging.requestPermission(
+    final messaging = FirebaseMessaging.instance;
+    final settings = await messaging.requestPermission(
       alert: true,
       badge: true,
       sound: true,
-      announcement: false,
-      carPlay: false,
-      criticalAlert: false,
-      provisional: false,
     );
+    print('Notification permission: ${settings.authorizationStatus}');
 
-    await _messaging.setForegroundNotificationPresentationOptions(
+    await messaging.setForegroundNotificationPresentationOptions(
       alert: true,
       badge: true,
       sound: true,
     );
 
     await _waitForIosApnsToken();
+    final apnsToken = await messaging.getAPNSToken();
+    print('APNs Token: $apnsToken');
+    String? fcmToken;
+    try {
+      fcmToken = await messaging.getToken();
+    } catch (e) {
+      print('FCM Token error: $e');
+    }
+    print('FCM Token: $fcmToken');
+
     await _registerDevice();
-    _messaging.onTokenRefresh.listen((_) {
+    messaging.onTokenRefresh.listen((token) {
+      print('FCM Token refreshed: $token');
       _registerDevice();
     });
 

@@ -20,6 +20,7 @@ import 'tbs_bible.dart';
 const String _readerFontSizePrefsKey = 'reader_font_size';
 const String _lastBibleEditionPrefsKey = 'last_bible_edition';
 const String _bibleEditionArarat = 'ararat';
+const String _bibleReaderRouteName = 'bible-reader';
 const String _bibleEditionTbs = 'tbs';
 const double _defaultReaderFontSize = 20;
 
@@ -77,6 +78,13 @@ int bibleChapterCount(String bookName, String edition) {
   return fallback;
 }
 
+String bibleBookLabel(String bookName, [String edition = _bibleEditionArarat]) {
+  if (edition == _bibleEditionTbs) {
+    return TbsBible.displayName(bookName);
+  }
+  return bookName;
+}
+
 String _foldArmRef(String value) {
   return value
       .toLowerCase()
@@ -87,27 +95,155 @@ String _foldArmRef(String value) {
       .replaceAll(RegExp(r'\s+'), '');
 }
 
+String _stripHomeRefEdition(String reference) {
+  return reference
+      .replaceAll(
+        RegExp(r'[(\[]\s*(tbs|տբս|արարատ)\s*[)\]]', caseSensitive: false),
+        '',
+      )
+      .replaceAll(
+        RegExp(r'(^|[\s,.\-–—])(tbs|տբս|արարատ)(?=$|[\s,.\-–—])',
+            caseSensitive: false),
+        ' ',
+      )
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+}
+
+String? _homeVerseEditionHint(String reference, String editionField) {
+  final raw = '$editionField $reference'.toLowerCase();
+  if (raw.contains('tbs') || raw.contains('տբս')) {
+    return _bibleEditionTbs;
+  }
+  if (raw.contains('ararat') || raw.contains('արարատ')) {
+    return _bibleEditionArarat;
+  }
+  return null;
+}
+
+bool _homeVerseTextMatches(String verse, String shown) {
+  final a = TransliterationHelper.normalizeForSearch(verse);
+  final b = TransliterationHelper.normalizeForSearch(
+    shown.replaceAll('«', '').replaceAll('»', '').trim(),
+  );
+  if (a.isEmpty || b.isEmpty) return false;
+  return a.contains(b) || b.contains(a);
+}
+
+const Map<String, String> _homeRefBookAliases = {
+  'Հեսու': 'Յեսու',
+  'Դատավորաց': 'Դատաւորաց',
+  'Ա Թագավորաց': 'Ա Թագաւորաց',
+  'Բ Թագավորաց': 'Բ Թագաւորաց',
+  'Գ Թագավորաց': 'Գ Թագաւորաց',
+  'Դ Թագավորաց': 'Դ Թագաւորաց',
+  'Նեեմիա': 'Նէեմիա',
+  'Հոբ': 'Յոբ',
+  'Եզեկիել': 'Եզեկիէլ',
+  'Դանիել': 'Դանիէլ',
+  'Հովսե': 'Ովսէ',
+  'Հովել': 'Հովէլ',
+  'Հովնան': 'Յովնան',
+  'Անգե': 'Անգէ',
+  'Մատթեոս': 'Մատթէոս',
+  'Հովհաննես': 'Յովհաննէս',
+  'Հովհաննեսի ավետարան': 'Յովհաննէս',
+  'Ավետարան ըստ Հովհաննեսի': 'Յովհաննէս',
+  'Ա Հովհաննես': 'Ա Յովհաննէս',
+  'Բ Հովհաննես': 'Բ Յովհաննէս',
+  'Գ Հովհաննես': 'Գ Յովհաննէս',
+  'Հռոմեացիս': 'Հռովմայեցիս',
+  'Ա Տիմոթեոս': 'Ա Տիմոթէոս',
+  'Բ Տիմոթեոս': 'Բ Տիմոթէոս',
+  'Հակոբոս': 'Յակոբոս',
+  'Հուդա': 'Յուդա',
+  'Հայտնություն': 'Յայտնութիւն',
+  'Հայտնութիւն': 'Յայտնութիւն',
+};
+
 ({String book, int chapter, int verse})? parseHomeBibleReference(String reference) {
-  final match = RegExp(r'^(.+?)\s+(\d+)\s*[:։]\s*(\d+)')
-      .firstMatch(reference.trim());
+  final cleaned = _stripHomeRefEdition(reference);
+  final match = RegExp(r'^(.+?)\s+(\d+)\s*[:։.,]\s*(\d+)')
+      .firstMatch(cleaned);
   if (match == null) return null;
   final rawBook = match.group(1)!.trim();
   final chapter = int.parse(match.group(2)!);
   final verse = int.parse(match.group(3)!);
   final folded = _foldArmRef(rawBook);
-  String? book;
-  for (final name in chapterCounts.keys) {
-    final nameFolded = _foldArmRef(name);
-    if (nameFolded == folded ||
-        folded.contains(nameFolded) ||
-        nameFolded.contains(folded)) {
-      if (book == null || name.length > book.length) {
-        book = name;
+  final queryPrefix = _refBookNumberPrefix(rawBook);
+  final lower = rawBook.toLowerCase();
+
+  if (folded.contains('հովհաննես') || folded.contains('յովհաննես')) {
+    final wantsLetter = lower.contains('ընդհանրական') ||
+        lower.contains('թուղթ') ||
+        lower.contains('նամակ');
+    final wantsGospel = lower.contains('ավետարան') || lower.contains('աւետարան');
+    if (wantsLetter && !wantsGospel) {
+      if (queryPrefix == 'Բ' || lower.contains('երկրորդ')) {
+        return (book: 'Բ Յովհաննէս', chapter: chapter, verse: verse);
+      }
+      if (queryPrefix == 'Գ' || lower.contains('երրորդ')) {
+        return (book: 'Գ Յովհաննէս', chapter: chapter, verse: verse);
+      }
+      return (book: 'Ա Յովհաննէս', chapter: chapter, verse: verse);
+    }
+    if (wantsGospel || queryPrefix == null) {
+      if (queryPrefix == null) {
+        return (book: 'Յովհաննէս', chapter: chapter, verse: verse);
       }
     }
   }
+
+  String? book;
+  var bestScore = -1;
+  void consider(String name, int score) {
+    if (!chapterCounts.containsKey(name)) return;
+    if (_canonBookNumberPrefix(name) != queryPrefix) return;
+    if (score > bestScore) {
+      book = name;
+      bestScore = score;
+    }
+  }
+
+  for (final name in chapterCounts.keys) {
+    final nameFolded = _foldArmRef(name);
+    if (nameFolded == folded) {
+      consider(name, 100);
+    } else if (folded.contains(nameFolded) && folded.length > nameFolded.length) {
+      consider(name, 70);
+    }
+  }
+  for (final entry in _homeRefBookAliases.entries) {
+    final aliasFolded = _foldArmRef(entry.key);
+    if (aliasFolded == folded) {
+      consider(entry.value, 90);
+    } else if (folded.contains(aliasFolded) &&
+        folded.length > aliasFolded.length) {
+      consider(entry.value, 60);
+    }
+  }
   if (book == null) return null;
-  return (book: book, chapter: chapter, verse: verse);
+  return (book: book!, chapter: chapter, verse: verse);
+}
+
+String? _refBookNumberPrefix(String rawBook) {
+  final match = RegExp(r'^(Ա|Բ|Գ|Դ|1|2|3|4)\.?\s+').firstMatch(rawBook.trim());
+  if (match == null) return null;
+  const map = {
+    'Ա': 'Ա',
+    'Բ': 'Բ',
+    'Գ': 'Գ',
+    'Դ': 'Դ',
+    '1': 'Ա',
+    '2': 'Բ',
+    '3': 'Գ',
+    '4': 'Դ',
+  };
+  return map[match.group(1)!];
+}
+
+String? _canonBookNumberPrefix(String name) {
+  return RegExp(r'^(Ա|Բ|Գ|Դ)\s').firstMatch(name)?.group(1);
 }
 
 class BibleApp extends StatefulWidget {
@@ -239,6 +375,66 @@ class _BibleAppState extends State<BibleApp> {
   }
 }
 
+class _BibleNavObserver extends NavigatorObserver {
+  final ValueChanged<Route<dynamic>?> onRouteChanged;
+
+  _BibleNavObserver(this.onRouteChanged);
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    onRouteChanged(route);
+  }
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    onRouteChanged(previousRoute);
+  }
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    onRouteChanged(previousRoute);
+  }
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    onRouteChanged(newRoute);
+  }
+}
+
+class _LockablePagePhysics extends PageScrollPhysics {
+  const _LockablePagePhysics({
+    required this.locked,
+    required this.shouldLock,
+    super.parent,
+  });
+
+  final ValueNotifier<bool> locked;
+  final bool Function() shouldLock;
+
+  bool get _locked => shouldLock() && locked.value;
+
+  @override
+  _LockablePagePhysics applyTo(ScrollPhysics? ancestor) {
+    return _LockablePagePhysics(
+      locked: locked,
+      shouldLock: shouldLock,
+      parent: buildParent(ancestor),
+    );
+  }
+
+  @override
+  bool shouldAcceptUserOffset(ScrollMetrics position) {
+    if (_locked) return false;
+    return super.shouldAcceptUserOffset(position);
+  }
+
+  @override
+  double applyPhysicsToUserOffset(ScrollMetrics position, double offset) {
+    if (_locked) return 0;
+    return super.applyPhysicsToUserOffset(position, offset);
+  }
+}
+
 class HomeScreen extends StatefulWidget {
   final bool isDark;
   final VoidCallback onToggleTheme;
@@ -257,7 +453,11 @@ class _HomeScreenState extends State<HomeScreen> {
   int _tabIndex = 0;
   String _lastBibleEdition = _bibleEditionArarat;
   final _savedVersesKey = GlobalKey<_SavedVersesScreenState>();
+  final _searchKey = GlobalKey<_SearchScreenState>();
+  final _bibleReadingLock = ValueNotifier<bool>(false);
   late final PageController _pageController;
+  late final NavigatorObserver _bibleNavObserver;
+  late final ScrollPhysics _pagePhysics;
   final List<GlobalKey<NavigatorState>> _navKeys =
       List<GlobalKey<NavigatorState>>.generate(
     5,
@@ -268,7 +468,16 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _pageController = PageController();
+    _bibleNavObserver = _BibleNavObserver(_onBibleRouteChanged);
+    _pagePhysics = _LockablePagePhysics(
+      locked: _bibleReadingLock,
+      shouldLock: () => _tabIndex == 1,
+    );
     _loadLastBibleEdition();
+  }
+
+  void _onBibleRouteChanged(Route<dynamic>? route) {
+    _bibleReadingLock.value = route?.settings.name == _bibleReaderRouteName;
   }
 
   Future<void> _loadLastBibleEdition() async {
@@ -292,13 +501,25 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _pageController.dispose();
+    _bibleReadingLock.dispose();
     super.dispose();
+  }
+
+  void _resetSearchTab() {
+    _navKeys[2].currentState?.popUntil((route) => route.isFirst);
+    _searchKey.currentState?.resetToStart();
   }
 
   void _onTabSelected(int index) {
     if (index == _tabIndex) {
       _navKeys[index].currentState?.popUntil((route) => route.isFirst);
+      if (index == 2) {
+        _searchKey.currentState?.resetToStart();
+      }
       return;
+    }
+    if (_tabIndex == 2) {
+      _resetSearchTab();
     }
     _pageController.animateToPage(
       index,
@@ -309,9 +530,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _onPageChanged(int index) {
     setState(() => _tabIndex = index);
-    if (index == 3) {
-      _savedVersesKey.currentState?.reload();
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _navKeys[0].currentState?.popUntil((route) => route.isFirst);
+      _resetSearchTab();
+      if (index == 3) {
+        _savedVersesKey.currentState?.reload();
+      }
+    });
   }
 
   bool _popInnerRoute() {
@@ -355,6 +581,7 @@ class _HomeScreenState extends State<HomeScreen> {
         body: PageView.builder(
           controller: _pageController,
           onPageChanged: _onPageChanged,
+          physics: _pagePhysics,
           itemCount: 5,
           itemBuilder: (context, index) {
             switch (index) {
@@ -373,6 +600,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     edition: _lastBibleEdition,
                     child: Navigator(
                       key: _navKeys[1],
+                      observers: [_bibleNavObserver],
                       onGenerateRoute: (settings) {
                         return MaterialPageRoute<void>(
                           settings: settings,
@@ -385,7 +613,10 @@ class _HomeScreenState extends State<HomeScreen> {
               case 2:
                 return _tabNavigator(
                   2,
-                  const SearchScreen(embedded: true),
+                  SearchScreen(
+                    key: _searchKey,
+                    embedded: true,
+                  ),
                 );
               case 3:
                 return _tabNavigator(
@@ -680,8 +911,8 @@ class _HomeTab extends StatelessWidget {
         children: [
           VerseOfDayHomeCard(
             isDark: isDark,
-            onOpen: (text, reference) =>
-                _openHomeVerseOfDay(context, text, reference),
+            onOpen: (text, reference, edition) =>
+                _openHomeVerseOfDay(context, text, reference, edition),
           ),
           const SizedBox(height: 28),
           Padding(
@@ -717,23 +948,74 @@ class _HomeTab extends StatelessWidget {
     );
   }
 
-  void _openHomeVerseOfDay(
+  Future<void> _openHomeVerseOfDay(
     BuildContext context,
-    String _,
+    String verseText,
     String reference,
-  ) {
+    String editionHint,
+  ) async {
     final parsed = parseHomeBibleReference(reference);
     if (parsed == null) return;
-    final chapterText = bibleText[parsed.book]?[parsed.chapter];
-    if (chapterText == null || chapterText.isEmpty) return;
+
+    String? chapterFor(String edition) {
+      if (edition == _bibleEditionTbs && TbsBible.textByBook.isEmpty) {
+        return null;
+      }
+      final text = bibleChapterText(parsed.book, parsed.chapter, edition);
+      if (text == 'Տեքստը դեռ չի ավելացվել') return null;
+      return text;
+    }
+
+    bool matches(String? chapter) {
+      if (chapter == null || chapter.isEmpty) return false;
+      final found = VerseHelper.getVerseText(chapter, parsed.verse);
+      if (found == null || found.isEmpty) return false;
+      if (verseText.trim().isEmpty) return true;
+      return _homeVerseTextMatches(found, verseText);
+    }
+
+    final hinted = _homeVerseEditionHint(reference, editionHint);
+    if (hinted == _bibleEditionTbs) {
+      await TbsBible.ensureLoaded();
+      if (!context.mounted) return;
+    }
+
+    final araratChapter = chapterFor(_bibleEditionArarat);
+    final araratOk = matches(araratChapter);
+    String? tbsChapter;
+    if (hinted == _bibleEditionTbs || !araratOk) {
+      await TbsBible.ensureLoaded();
+      if (!context.mounted) return;
+      tbsChapter = chapterFor(_bibleEditionTbs);
+    }
+
+    late final String edition;
+    late final String chapter;
+    if (hinted == _bibleEditionTbs && tbsChapter != null) {
+      edition = _bibleEditionTbs;
+      chapter = tbsChapter;
+    } else if (araratOk && araratChapter != null) {
+      edition = _bibleEditionArarat;
+      chapter = araratChapter;
+    } else if (tbsChapter != null) {
+      edition = _bibleEditionTbs;
+      chapter = tbsChapter;
+    } else if (araratChapter != null) {
+      edition = _bibleEditionArarat;
+      chapter = araratChapter;
+    } else {
+      return;
+    }
+    if (!context.mounted) return;
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => ChapterTextScreen(
           bookName: parsed.book,
           chapterNumber: parsed.chapter,
-          text: chapterText,
+          text: chapter,
           targetVerse: parsed.verse,
+          edition: edition,
           autoClearFramesAfter: const Duration(seconds: 5),
         ),
       ),
@@ -1131,10 +1413,19 @@ class _AraratBooksViewState extends State<_AraratBooksView> {
                                   const SizedBox(width: 12),
                                   Expanded(
                                     child: Text(
-                                      book,
+                                      bibleBookLabel(book, widget.edition),
+                                      maxLines: widget.edition ==
+                                              _bibleEditionTbs
+                                          ? 2
+                                          : 1,
+                                      overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
-                                        fontSize: 16,
+                                        fontSize: widget.edition ==
+                                                _bibleEditionTbs
+                                            ? 14
+                                            : 16,
                                         fontWeight: FontWeight.w600,
+                                        height: 1.25,
                                         color: AppColors.text(isDark),
                                       ),
                                     ),
@@ -1649,6 +1940,7 @@ class _ChaptersScreenState extends State<ChaptersScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
+        settings: const RouteSettings(name: _bibleReaderRouteName),
         builder: (_) => ChapterTextScreen(
           bookName: widget.bookName,
           chapterNumber: chapterNumber,
@@ -1666,21 +1958,25 @@ class _ChaptersScreenState extends State<ChaptersScreen> {
       backgroundColor: AppColors.bg(isDark),
       appBar: AppBar(
         backgroundColor: AppColors.bg(isDark),
+        toolbarHeight:
+            widget.edition == _bibleEditionTbs ? 92 : kToolbarHeight,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),
         ),
-        titleSpacing: 0,
+        titleSpacing: 4,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text(
-              widget.bookName,
-              maxLines: 1,
+              bibleBookLabel(widget.bookName, widget.edition),
+              maxLines: widget.edition == _bibleEditionTbs ? 3 : 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontSize: 22,
+                fontSize: widget.edition == _bibleEditionTbs ? 15 : 22,
                 fontWeight: FontWeight.w600,
+                height: 1.2,
                 color: AppColors.text(isDark),
               ),
             ),
@@ -1990,6 +2286,7 @@ class VerseHelper {
     Function(String, int, int, String, String?)? onVerseAction,
     double readerFontSize = _defaultReaderFontSize,
     int? targetVerse,
+    String searchQuery = '',
   }) {
     final List<InlineSpan> children = [];
     final textTheme = Theme.of(context).textTheme.bodyMedium;
@@ -2274,7 +2571,14 @@ class VerseHelper {
         if (verseText.isNotEmpty) {
           void addVersePart(String part) {
             final words = part.split(RegExp(r'(\s+)'));
-            for (int i = 0; i < words.length; i++) {
+            final queryNorm = searchQuery.trim().isEmpty
+                ? ''
+                : TransliterationHelper.normalizeForSearch(searchQuery);
+            final highlightHere = queryNorm.isNotEmpty &&
+                targetVerse != null &&
+                targetVerse == verseNumber;
+            var i = 0;
+            while (i < words.length) {
               final word = words[i];
               if (word.trim().isEmpty) {
                 children.add(
@@ -2283,40 +2587,64 @@ class VerseHelper {
                     style: baseStyle.copyWith(),
                   ),
                 );
-              } else {
-                final wordTapRecognizer = TapGestureRecognizer()
-                  ..onTap = () {
-                    if (enableMultiSelect) {
-                      onVerseSelectToggle?.call(verseNumber, verseText);
-                    } else {
-                      VerseHelper.handleWordClick(
-                        context,
-                        bookName,
-                        chapterNumber,
-                        verseNumber,
-                        verseText,
-                        null,
-                        onWordClick: onWordClick,
-                      );
-                    }
-                  };
+                i++;
+                continue;
+              }
 
+              final wordTapRecognizer = TapGestureRecognizer()
+                ..onTap = () {
+                  if (enableMultiSelect) {
+                    onVerseSelectToggle?.call(verseNumber, verseText);
+                  } else {
+                    VerseHelper.handleWordClick(
+                      context,
+                      bookName,
+                      chapterNumber,
+                      verseNumber,
+                      verseText,
+                      null,
+                      onWordClick: onWordClick,
+                    );
+                  }
+                };
+
+              var highlightLength = 1;
+              var isSearchHit = false;
+              if (highlightHere) {
+                final wordNorm = TransliterationHelper.normalizeForSearch(
+                  word.replaceAll(RegExp(r'[.,;:!?]'), ''),
+                );
+                if (queryNorm.contains(' ')) {
+                  final rest = words.skip(i).join();
+                  if (TransliterationHelper.normalizeForSearch(rest)
+                      .startsWith(queryNorm)) {
+                    isSearchHit = true;
+                    highlightLength = searchQuery.trim().split(RegExp(r'\s+')).length;
+                  }
+                } else if (wordNorm == queryNorm || wordNorm.contains(queryNorm)) {
+                  isSearchHit = true;
+                }
+              }
+
+              for (var k = 0; k < highlightLength && i + k < words.length; k++) {
+                final piece = words[i + k];
                 final separator =
-                    (i < words.length - 1 && words[i + 1].trim().isNotEmpty)
+                    (i + k < words.length - 1 && words[i + k + 1].trim().isNotEmpty)
                         ? ' '
                         : '';
-
                 children.add(
                   TextSpan(
-                    text: word + separator,
+                    text: piece + separator,
                     style: baseStyle.copyWith(
                       letterSpacing: 0.2,
                       wordSpacing: 1.5,
+                      fontWeight: isSearchHit ? FontWeight.w700 : null,
                     ),
                     recognizer: wordTapRecognizer,
                   ),
                 );
               }
+              i += highlightLength;
             }
           }
 
@@ -2517,15 +2845,17 @@ class VerseHelper {
     String bookName,
     int chapterNumber,
     int verseNumber,
-    String verseText,
-  ) async {
-    final textToCopy = '$bookName $chapterNumber:$verseNumber\n$verseText';
+    String verseText, {
+    String edition = _bibleEditionArarat,
+  }) async {
+    final label = bibleBookLabel(bookName, edition);
+    final textToCopy = '$label $chapterNumber:$verseNumber\n$verseText';
     await Clipboard.setData(ClipboardData(text: textToCopy));
     if (context.mounted) {
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Պատճենված է $bookName $chapterNumber:$verseNumber'),
+          content: Text('Պատճենված է $label $chapterNumber:$verseNumber'),
           duration: const Duration(seconds: 1),
         ),
       );
@@ -3016,7 +3346,8 @@ Future<void> showVerseActionSheet({
   String edition = _bibleEditionArarat,
   GlobalKey? anchorKey,
 }) {
-  final ref = '$bookName $chapterNumber։$verseNumber';
+  final ref =
+      '${bibleBookLabel(bookName, edition)} $chapterNumber։$verseNumber';
   final media = MediaQuery.of(context);
   final screen = media.size;
   const menuHeight = 236.0;
@@ -3163,6 +3494,7 @@ Future<void> showVerseActionSheet({
                           chapterNumber,
                           verseNumber,
                           verseText,
+                          edition: edition,
                         );
                       },
                     ),
@@ -3210,7 +3542,8 @@ class _TranslationCompareScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final ref = '$bookName $chapterNumber։$verseNumber';
+    final ref =
+        '${bibleBookLabel(bookName, edition)} $chapterNumber։$verseNumber';
     Widget card(String title, String body) {
       return Container(
         width: double.infinity,
@@ -3532,6 +3865,7 @@ class _ChapterTextScreenState extends State<ChapterTextScreen> {
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
+        settings: const RouteSettings(name: _bibleReaderRouteName),
         builder: (_) => ChapterTextScreen(
           bookName: widget.bookName,
           chapterNumber: chapterNumber,
@@ -3735,18 +4069,18 @@ class _ChapterTextScreenState extends State<ChapterTextScreen> {
             color: isDark ? AppColors.darkForest : AppColors.lightChip,
             borderRadius: BorderRadius.circular(20),
           ),
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(
-              widget.bookName,
-              maxLines: 1,
+          child: Text(
+              bibleBookLabel(widget.bookName, widget.edition),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize: 16,
+                fontSize: 15,
                 fontWeight: FontWeight.w500,
+                height: 1.2,
                 color: isDark ? AppColors.darkText : AppColors.lightText,
               ),
             ),
-          ),
         ),
         centerTitle: true,
         leading: IconButton(
@@ -3901,13 +4235,25 @@ class SearchScreen extends StatefulWidget {
 
 class _SearchScreenState extends State<SearchScreen> {
   final TextEditingController _controller = TextEditingController();
+  final FocusNode _searchFocus = FocusNode();
 
   final List<SearchResult> _results = [];
-  final List<IndexedVerse> _index = [];
+  final List<IndexedVerse> _araratIndex = [];
+  final List<IndexedVerse> _tbsIndex = [];
 
   Timer? _debounce;
-  Future<void>? _indexFuture;
-  bool _indexReady = false;
+  Future<void>? _araratIndexFuture;
+  Future<void>? _tbsIndexFuture;
+  bool _araratReady = false;
+  bool _tbsReady = false;
+  String _edition = _bibleEditionArarat;
+  bool _editionLoading = false;
+
+  List<IndexedVerse> get _activeIndex =>
+      _edition == _bibleEditionTbs ? _tbsIndex : _araratIndex;
+
+  bool get _activeReady =>
+      _edition == _bibleEditionTbs ? _tbsReady : _araratReady;
 
   @override
   void initState() {
@@ -3918,18 +4264,24 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Future<void> _ensureIndex() {
-    return _indexFuture ??= _buildIndex();
+    if (_edition == _bibleEditionTbs) {
+      return _tbsIndexFuture ??= _buildTbsIndex();
+    }
+    return _araratIndexFuture ??= _buildAraratIndex();
   }
 
-  Future<void> _buildIndex() async {
+  Future<void> _indexChapters(
+    Map<String, Map<int, String>> source,
+    List<IndexedVerse> target,
+  ) async {
     var processedChapters = 0;
-    for (final bookEntry in bibleText.entries) {
+    for (final bookEntry in source.entries) {
       for (final chapterEntry in bookEntry.value.entries) {
         final verses = VerseHelper.parseVerses(chapterEntry.value);
         for (final verseEntry in verses.entries) {
           final verseText = verseEntry.value.trim();
           if (verseText.isEmpty) continue;
-          _index.add(
+          target.add(
             IndexedVerse(
               book: bookEntry.key,
               chapter: chapterEntry.key,
@@ -3941,13 +4293,42 @@ class _SearchScreenState extends State<SearchScreen> {
           );
         }
         processedChapters++;
-        if (processedChapters % 8 == 0) {
+        if (processedChapters % 2 == 0) {
           await Future<void>.delayed(Duration.zero);
           if (!mounted) return;
         }
       }
     }
-    _indexReady = true;
+  }
+
+  Future<void> _buildAraratIndex() async {
+    await _indexChapters(bibleText, _araratIndex);
+    _araratReady = true;
+  }
+
+  Future<void> _buildTbsIndex() async {
+    await TbsBible.ensureLoaded();
+    if (!mounted) return;
+    await _indexChapters(TbsBible.textByBook, _tbsIndex);
+    _tbsReady = true;
+  }
+
+  Future<void> _selectEdition(String edition) async {
+    if (_edition == edition) return;
+    final query = _controller.text;
+    final keepFocus = _searchFocus.hasFocus;
+    setState(() {
+      _edition = edition;
+      _editionLoading = true;
+    });
+    await _ensureIndex();
+    if (!mounted) return;
+    await _search(query);
+    if (!mounted) return;
+    setState(() => _editionLoading = false);
+    if (keepFocus) {
+      _searchFocus.requestFocus();
+    }
   }
 
   /// 🔹 Debounced search
@@ -3958,7 +4339,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
   /// 🔹 Արագ search с триграммами
   Future<void> _search(String query) async {
-    if (!_indexReady) {
+    if (!_activeReady) {
       await _ensureIndex();
       if (!mounted) return;
     }
@@ -3977,7 +4358,7 @@ class _SearchScreenState extends State<SearchScreen> {
     const minSimilarity = 0.3; // Минимальный порог совпадения триграмм
     var fuzzyLeft = 250;
 
-    for (final v in _index) {
+    for (final v in _activeIndex) {
       if (temp.length >= maxResults) break;
       final textNorm = v.normalized;
 
@@ -4059,10 +4440,116 @@ class _SearchScreenState extends State<SearchScreen> {
     });
   }
 
+  Widget _editionMenu() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final label = _edition == _bibleEditionTbs ? 'TBS' : 'Արարատ';
+    final bg = isDark ? AppColors.cream : AppColors.forest;
+    final fg = isDark ? AppColors.darkBg : AppColors.cream;
+    return MenuAnchor(
+      style: MenuStyle(
+        backgroundColor: WidgetStatePropertyAll(
+          isDark ? AppColors.darkForest : AppColors.cream,
+        ),
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      ),
+      builder: (context, controller, _) {
+        return GestureDetector(
+          onTap: () {
+            if (controller.isOpen) {
+              controller.close();
+            } else {
+              controller.open();
+            }
+          },
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(14, 6, 8, 6),
+            decoration: BoxDecoration(
+              color: bg,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: fg,
+                  ),
+                ),
+                Icon(
+                  controller.isOpen
+                      ? Icons.keyboard_arrow_up
+                      : Icons.keyboard_arrow_down,
+                  size: 18,
+                  color: fg,
+                ),
+                if (_editionLoading) ...[
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: fg,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+      menuChildren: [
+        MenuItemButton(
+          onPressed: () => _selectEdition(_bibleEditionArarat),
+          child: Text(
+            'Արարատ',
+            style: TextStyle(
+              fontWeight: _edition == _bibleEditionArarat
+                  ? FontWeight.w700
+                  : FontWeight.w500,
+              color: AppColors.text(isDark),
+            ),
+          ),
+        ),
+        MenuItemButton(
+          onPressed: () => _selectEdition(_bibleEditionTbs),
+          child: Text(
+            'TBS',
+            style: TextStyle(
+              fontWeight:
+                  _edition == _bibleEditionTbs ? FontWeight.w700 : FontWeight.w500,
+              color: AppColors.text(isDark),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  void resetToStart() {
+    _debounce?.cancel();
+    if (_controller.text.isEmpty && _results.isEmpty && !_searchFocus.hasFocus) {
+      return;
+    }
+    _controller.clear();
+    _searchFocus.unfocus();
+    if (mounted) {
+      setState(() => _results.clear());
+    } else {
+      _results.clear();
+    }
+  }
+
   @override
   void dispose() {
     _debounce?.cancel();
     _controller.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
 
@@ -4080,9 +4567,10 @@ class _SearchScreenState extends State<SearchScreen> {
               ),
       ),
       body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
             child: Container(
               height: 50,
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -4095,6 +4583,7 @@ class _SearchScreenState extends State<SearchScreen> {
               child: Center(
                 child: TextField(
                   controller: _controller,
+                  focusNode: _searchFocus,
                   style: TextStyle(
                     color: Theme.of(context).brightness == Brightness.dark
                         ? AppColors.darkText
@@ -4102,8 +4591,10 @@ class _SearchScreenState extends State<SearchScreen> {
                   ),
                   decoration: InputDecoration(
                     hintText: 'Փնտրել բառ կամ արտահայտություն...',
-                    hintStyle: const TextStyle(
-                      color: Colors.black,
+                    hintStyle: TextStyle(
+                      color: Theme.of(context).brightness == Brightness.dark
+                          ? AppColors.darkMuted
+                          : AppColors.lightMuted,
                     ),
                     border: InputBorder.none,
                     prefixIcon: Icon(
@@ -4118,9 +4609,19 @@ class _SearchScreenState extends State<SearchScreen> {
               ),
             ),
           ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 16, 8),
+            child: _editionMenu(),
+          ),
           Expanded(
             child: _results.isEmpty && _controller.text.isNotEmpty
-                ? const Center(child: Text('Ոչինչ չի գտնվել'))
+                ? Center(
+                    child: _editionLoading
+                        ? const CircularProgressIndicator(
+                            color: AppColors.forest,
+                          )
+                        : const Text('Ոչինչ չի գտնվել'),
+                  )
                 : ListView.builder(
                     itemCount: _results.length,
                     itemBuilder: (context, index) {
@@ -4159,7 +4660,7 @@ class _SearchScreenState extends State<SearchScreen> {
                         ),
                         child: ListTile(
                           title: Text(
-                            '${r.book} ${r.chapter}.${r.verse}',
+                            '${bibleBookLabel(r.book, _edition)} ${r.chapter}.${r.verse}',
                             style: const TextStyle(fontWeight: FontWeight.bold),
                           ),
                           subtitle: RichText(
@@ -4177,9 +4678,12 @@ class _SearchScreenState extends State<SearchScreen> {
                                 ),
                                 TextSpan(
                                   text: match,
-                                  style: const TextStyle(
-                                    color: Colors.blue,
-                                    fontWeight: FontWeight.bold,
+                                  style: TextStyle(
+                                    color: Theme.of(context).brightness ==
+                                            Brightness.dark
+                                        ? AppColors.darkText
+                                        : AppColors.lightText,
+                                    fontWeight: FontWeight.w700,
                                   ),
                                 ),
                                 TextSpan(
@@ -4201,6 +4705,7 @@ class _SearchScreenState extends State<SearchScreen> {
                                   targetWord: _controller.text.contains(' ')
                                       ? null
                                       : r.matchedWord,
+                                  edition: _edition,
                                 ),
                               ),
                             );
@@ -4221,7 +4726,8 @@ class ChapterTextScreenWithHighlight extends StatefulWidget {
   final int chapterNumber;
   final String searchQuery;
   final int? targetVerse;
-  final String? targetWord; // Ավելացնել նպատակային բառը
+  final String? targetWord;
+  final String edition;
 
   const ChapterTextScreenWithHighlight({
     super.key,
@@ -4229,7 +4735,8 @@ class ChapterTextScreenWithHighlight extends StatefulWidget {
     required this.chapterNumber,
     required this.searchQuery,
     this.targetVerse,
-    this.targetWord, // Ավելացնել նպատակային բառը
+    this.targetWord,
+    this.edition = _bibleEditionArarat,
   });
 
   @override
@@ -4447,6 +4954,7 @@ class _ChapterTextScreenWithHighlightState
       chapterNumber: chapterNumber,
       verseNumber: verseNumber,
       verseText: verseText,
+      edition: widget.edition,
       anchorKey: _verseKeys[verseNumber],
     );
   }
@@ -4471,10 +4979,14 @@ class _ChapterTextScreenWithHighlightState
 
   @override
   Widget build(BuildContext context) {
-    final text = bibleText[widget.bookName]?[widget.chapterNumber] ??
-        'Տեքստը դեռ չի ավելացվել';
+    final text = bibleChapterText(
+      widget.bookName,
+      widget.chapterNumber,
+      widget.edition,
+    );
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
-    final int totalChapters = chapterCounts[widget.bookName] ?? 1;
+    final int totalChapters =
+        bibleChapterCount(widget.bookName, widget.edition);
     final bool hasPreviousChapter = widget.chapterNumber > 1;
     final bool hasNextChapter = widget.chapterNumber < totalChapters;
 
@@ -4487,16 +4999,16 @@ class _ChapterTextScreenWithHighlightState
             color: isDark ? AppColors.darkForest : AppColors.lightChip,
             borderRadius: BorderRadius.circular(20),
           ),
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(
-              '${widget.bookName} ${widget.chapterNumber}',
-              maxLines: 1,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-                color: isDark ? AppColors.darkText : AppColors.lightText,
-              ),
+          child: Text(
+            '${bibleBookLabel(widget.bookName, widget.edition)} ${widget.chapterNumber}',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w500,
+              height: 1.2,
+              color: isDark ? AppColors.darkText : AppColors.lightText,
             ),
           ),
         ),
@@ -4525,22 +5037,46 @@ class _ChapterTextScreenWithHighlightState
                 padding: const EdgeInsets.all(16.0),
                 child: SingleChildScrollView(
                   controller: _scrollController,
-                  child: _buildHighlightedText(
-                      text, _readerFontSize, _selectedWordKey, (
-                    bookName,
-                    chapterNumber,
-                    verseNumber,
-                    verseText,
-                    wordKey,
-                  ) {
-                    _showActionPanel(
+                  child: VerseHelper.buildClickableVerseText(
+                    context,
+                    text,
+                    widget.bookName,
+                    widget.chapterNumber,
+                    readerFontSize: _readerFontSize,
+                    verseKeys: _verseKeys,
+                    targetVerse: widget.targetVerse,
+                    searchQuery: widget.searchQuery,
+                    onWordClick: (
                       bookName,
                       chapterNumber,
                       verseNumber,
                       verseText,
                       wordKey,
-                    );
-                  }),
+                    ) {
+                      _showActionPanel(
+                        bookName,
+                        chapterNumber,
+                        verseNumber,
+                        verseText,
+                        wordKey,
+                      );
+                    },
+                    onVerseAction: (
+                      bookName,
+                      chapterNumber,
+                      verseNumber,
+                      verseText,
+                      wordKey,
+                    ) {
+                      _showActionPanel(
+                        bookName,
+                        chapterNumber,
+                        verseNumber,
+                        verseText,
+                        wordKey,
+                      );
+                    },
+                  ),
                 ),
               ),
             ),
@@ -4563,6 +5099,7 @@ class _ChapterTextScreenWithHighlightState
                                   searchQuery: widget.searchQuery,
                                   targetVerse: null,
                                   targetWord: null,
+                                  edition: widget.edition,
                                 ),
                               ),
                             );
@@ -4629,6 +5166,7 @@ class _ChapterTextScreenWithHighlightState
                                   searchQuery: widget.searchQuery,
                                   targetVerse: null,
                                   targetWord: null,
+                                  edition: widget.edition,
                                 ),
                               ),
                             );
@@ -4669,542 +5207,6 @@ class _ChapterTextScreenWithHighlightState
         ),
       ),
     );
-  }
-
-  Widget _buildHighlightedText(
-    String text,
-    double readerFontSize,
-    String? selectedWordKey,
-    Function(String, int, int, String, String?) onWordClick,
-  ) {
-    final List<InlineSpan> children = [];
-    final textTheme = Theme.of(context).textTheme.bodyMedium;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final double bodySize = readerFontSize;
-    final double headingSize =
-        (readerFontSize * 1.4).clamp(22.0, 40.0).toDouble();
-    final baseStyle = textTheme?.copyWith(
-          fontSize: bodySize,
-          height: 1.6,
-          color: isDark ? Colors.white : Colors.black,
-        ) ??
-        TextStyle(
-          fontSize: bodySize,
-          height: 1.6,
-          color: isDark ? Colors.white : Colors.black,
-        );
-
-    final versePattern = RegExp(r'(\d+)[*]?\s*');
-    // Обрабатываем весь текст главы, включая заголовки и описания,
-    // чтобы, например, заголовки Пс 119 («ԱԼԷՖ», «ԲԷԹ» ...) тоже были видны.
-    final textToProcess = text;
-    final processedMatches = versePattern.allMatches(textToProcess).toList();
-
-    // Заголовки акростиха 118 (119) псалма
-    const psalm119Headings = [
-      'ԱԼԷՖ',
-      'ԲԷԹ',
-      'ԳԻՄԷԼ',
-      'ԴԱԼԷԹ',
-      'ՀԷ',
-      'ՎԱՎ',
-      'ԶԱՅԻՆ',
-      'ԽԷԹ',
-      'ԹԵԹ',
-      'ՅՈԴ',
-      'ՔԱՖ',
-      'ԼԱՄԷԴ',
-      'ՄԷՄ',
-      'ՆՈՒՆ',
-      'ՍԱՄԷԽ',
-      'ԱՅԻՆ',
-      'ՓԷ',
-      'ՑԱԴԷ',
-      'ՔՈՖ',
-      'ՐԷՇ',
-      'ՇԻՆ',
-      'ԹԱՎ',
-    ];
-
-    if (processedMatches.isEmpty) {
-      return Text.rich(
-        TextSpan(text: textToProcess, style: baseStyle),
-      );
-    }
-
-    final List<Map<String, dynamic>> verses = [];
-    int lastEnd = 0;
-
-    for (int i = 0; i < processedMatches.length; i++) {
-      final match = processedMatches[i];
-
-      final verseNum = match.group(1)!;
-      final verseNumber = int.tryParse(verseNum);
-
-      int verseEnd = textToProcess.length;
-      if (i < processedMatches.length - 1) {
-        final nextMatch = processedMatches[i + 1];
-        verseEnd = nextMatch.start;
-      }
-
-      final verseText = textToProcess.substring(match.end, verseEnd).trim();
-
-      if (match.start > lastEnd) {
-        final beforeText = textToProcess.substring(lastEnd, match.start);
-        if (beforeText.trim().isNotEmpty &&
-            verseNumber != null &&
-            verseText.isNotEmpty) {
-          verses.add({
-            'type': 'text',
-            'text': beforeText,
-            'verseNumber': verseNumber,
-            'verseText': verseText,
-          });
-        }
-      }
-
-      if (verseNumber != null && verseText.isNotEmpty) {
-        verses.add({
-          'type': 'verse',
-          'verseNumber': verseNumber,
-          'verseText': verseText,
-        });
-      }
-
-      lastEnd = verseEnd;
-    }
-
-    if (lastEnd < textToProcess.length) {
-      final afterText = textToProcess.substring(lastEnd);
-      if (afterText.trim().isNotEmpty) {
-        final lastVerse = verses.isNotEmpty && verses.last['type'] == 'verse'
-            ? verses.last
-            : {'verseNumber': 1, 'verseText': afterText};
-        verses.add({
-          'type': 'text',
-          'text': afterText,
-          'verseNumber': lastVerse['verseNumber'],
-          'verseText': lastVerse['verseText'],
-        });
-      }
-    }
-
-    for (final verseData in verses) {
-      if (verseData['type'] == 'verse') {
-        final verseNumber = verseData['verseNumber'] as int;
-        final verseText = verseData['verseText'] as String;
-
-        final verseKey = 'verse_$verseNumber';
-        final verseNumKey = 'verse_${verseNumber}_num';
-        final isVerseSelectedByKey =
-            selectedWordKey == verseKey || selectedWordKey == verseNumKey;
-        final isVerseMultiSelected = _selectedVerses.containsKey(verseNumber);
-        final isTargetVerse = widget.targetVerse == verseNumber;
-
-        children.add(
-          WidgetSpan(
-            alignment: PlaceholderAlignment.baseline,
-            baseline: TextBaseline.alphabetic,
-            child: SizedBox(
-              key: _verseKeys.putIfAbsent(verseNumber, () => GlobalKey()),
-              width: 0,
-              height: 0,
-            ),
-          ),
-        );
-        children.add(
-          TextSpan(
-            text: '$verseNumber ',
-            style: baseStyle.copyWith(
-              fontWeight: FontWeight.w600,
-              fontSize: (baseStyle.fontSize ?? 20) * 0.78,
-              color: isDark ? Colors.grey[400] : Colors.grey[600],
-              backgroundColor: (isVerseSelectedByKey || isVerseMultiSelected)
-                  ? AppColors.olive.withValues(alpha: 0.18)
-                  : null,
-            ),
-            recognizer: TapGestureRecognizer()
-              ..onTap = () {
-                _toggleVerseSelection(verseNumber, verseText);
-              },
-          ),
-        );
-
-        if (verseText.isNotEmpty) {
-          // Специальная обработка заголовков акростиха в 118 (119) псалме,
-          // которые могут оказаться внутри текста стиха (между номерами стихов).
-          if (widget.bookName == 'Սաղմոս' && widget.chapterNumber == 119) {
-            String? foundHeading;
-            int headingIndex = -1;
-
-            for (final h in psalm119Headings) {
-              final idx = verseText.indexOf(h);
-              if (idx != -1) {
-                foundHeading = h;
-                headingIndex = idx;
-                break;
-              }
-            }
-
-            if (foundHeading != null && headingIndex != -1) {
-              final beforeHeadingText =
-                  verseText.substring(0, headingIndex).trimRight();
-              final afterHeadingText = verseText
-                  .substring(headingIndex + foundHeading.length)
-                  .trimLeft();
-
-              if (beforeHeadingText.isNotEmpty) {
-                _addHighlightedClickableText(
-                  children,
-                  beforeHeadingText,
-                  baseStyle,
-                  widget.bookName,
-                  widget.chapterNumber,
-                  verseNumber,
-                  verseText,
-                  selectedWordKey,
-                  onWordClick,
-                  isTargetVerse: isTargetVerse,
-                );
-              }
-
-              // Сам заголовок – большим шрифтом по центру
-              children.add(
-                WidgetSpan(
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 24.0, bottom: 10.0),
-                    child: Text(
-                      foundHeading,
-                      textAlign: TextAlign.center,
-                      style: baseStyle.copyWith(
-                        fontSize: headingSize,
-                        fontWeight: FontWeight.bold,
-                        color: isDark ? Colors.white : Colors.black,
-                      ),
-                    ),
-                  ),
-                ),
-              );
-
-              if (afterHeadingText.isNotEmpty) {
-                _addHighlightedClickableText(
-                  children,
-                  afterHeadingText,
-                  baseStyle,
-                  widget.bookName,
-                  widget.chapterNumber,
-                  verseNumber,
-                  verseText,
-                  selectedWordKey,
-                  onWordClick,
-                  isTargetVerse: isTargetVerse,
-                );
-              }
-
-              // Уже всё отрисовали для этого стиха
-              continue;
-            }
-          }
-
-          _addHighlightedClickableText(
-            children,
-            verseText,
-            baseStyle,
-            widget.bookName,
-            widget.chapterNumber,
-            verseNumber,
-            verseText,
-            selectedWordKey,
-            onWordClick,
-            isTargetVerse: isTargetVerse,
-          );
-        }
-      } else {
-        final textContent = verseData['text'] as String;
-        final verseNumber = verseData['verseNumber'] as int;
-        final verseText = verseData['verseText'] as String;
-
-        // Для 119 псалма вырезаем заголовки «ԱԼԷՖ», «ԲԷԹ» и т.п. даже если
-        // они оказались внутри одного куска текста, и рисуем их отдельно.
-        if (widget.bookName == 'Սաղմոս' && widget.chapterNumber == 119) {
-          String remaining = textContent;
-
-          while (remaining.isNotEmpty) {
-            String? foundHeading;
-            int headingIndex = -1;
-
-            for (final h in psalm119Headings) {
-              final idx = remaining.indexOf(h);
-              if (idx != -1 && (headingIndex == -1 || idx < headingIndex)) {
-                headingIndex = idx;
-                foundHeading = h;
-              }
-            }
-
-            if (foundHeading == null || headingIndex == -1) {
-              final isTargetVerse = widget.targetVerse == verseNumber;
-              _addHighlightedClickableText(
-                children,
-                remaining,
-                baseStyle,
-                widget.bookName,
-                widget.chapterNumber,
-                verseNumber,
-                verseText,
-                selectedWordKey,
-                onWordClick,
-                isTargetVerse: isTargetVerse,
-              );
-              break;
-            }
-
-            final before = remaining.substring(0, headingIndex).trimRight();
-            if (before.isNotEmpty) {
-              final isTargetVerse = widget.targetVerse == verseNumber;
-              _addHighlightedClickableText(
-                children,
-                before,
-                baseStyle,
-                widget.bookName,
-                widget.chapterNumber,
-                verseNumber,
-                verseText,
-                selectedWordKey,
-                onWordClick,
-                isTargetVerse: isTargetVerse,
-              );
-            }
-
-            // Сам заголовок – большим шрифтом по центру.
-            children.add(
-              WidgetSpan(
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 24.0, bottom: 10.0),
-                  child: Text(
-                    foundHeading,
-                    textAlign: TextAlign.center,
-                    style: baseStyle.copyWith(
-                      fontSize: headingSize,
-                      fontWeight: FontWeight.bold,
-                      color: isDark ? Colors.white : Colors.black,
-                    ),
-                  ),
-                ),
-              ),
-            );
-
-            remaining = remaining
-                .substring(headingIndex + foundHeading.length)
-                .trimLeft();
-          }
-        } else {
-          final isTargetVerse = widget.targetVerse == verseNumber;
-
-          _addHighlightedClickableText(
-            children,
-            textContent,
-            baseStyle,
-            widget.bookName,
-            widget.chapterNumber,
-            verseNumber,
-            verseText,
-            selectedWordKey,
-            onWordClick,
-            isTargetVerse: isTargetVerse,
-          );
-        }
-      }
-    }
-
-    return Text.rich(TextSpan(style: baseStyle, children: children));
-  }
-
-  void _addHighlightedClickableText(
-    List<InlineSpan> children,
-    String text,
-    TextStyle baseStyle,
-    String bookName,
-    int chapterNumber,
-    int? verseNumber,
-    String verseText,
-    String? selectedWordKey,
-    Function(String, int, int, String, String?) onWordClick, {
-    bool isTargetVerse = false,
-  }) {
-    final words = text.split(RegExp(r'(\s+)'));
-
-    final shouldHighlight = isTargetVerse && verseNumber == widget.targetVerse;
-
-    String? searchQueryLower;
-    bool isPhraseSearch = false;
-    List<String>? phraseWords;
-
-    if (widget.searchQuery.isNotEmpty) {
-      searchQueryLower = widget.searchQuery.toLowerCase().trim();
-      isPhraseSearch = searchQueryLower.contains(' ');
-
-      if (isPhraseSearch) {
-        phraseWords = widget.searchQuery.split(' ');
-      }
-    }
-
-    int i = 0;
-    while (i < words.length) {
-      final word = words[i];
-      if (word.trim().isEmpty) {
-        children.add(TextSpan(text: word, style: baseStyle));
-        i++;
-        continue;
-      }
-
-      final cleanWord =
-          word.replaceAll(RegExp(r'[.,;:!?]'), '').toLowerCase().trim();
-
-      // Ստուգել համընկնումը
-      bool highlightThis = false;
-      int highlightLength = 1;
-
-      if (shouldHighlight && searchQueryLower != null) {
-        if (isPhraseSearch) {
-          String currentPhrase = '';
-          for (int j = i; j < words.length; j++) {
-            if (j > i) currentPhrase += ' ';
-            currentPhrase += words[j];
-          }
-
-          final currentPhraseLower = currentPhrase.toLowerCase();
-          if (currentPhraseLower.startsWith(searchQueryLower)) {
-            highlightThis = true;
-            highlightLength = phraseWords!.length;
-          }
-        } else {
-          // ՕԳՏԱԳՈՐԾԵՆՔ ՆՈՐՄԱԼԻԶԱՑՈՒՄ ԵՐԿՈՒ ՈՒՂՂԱԳՐՈՒԹՅՈՒՆՆԵՐՈՎ ՓՆՏՐԵԼՈՒ ՀԱՄԱՐ
-          final cleanSearchQuery = TransliterationHelper.normalizeForSearch(
-            widget.searchQuery,
-          );
-          final cleanWordNormalized = TransliterationHelper.normalizeForSearch(
-            cleanWord,
-          );
-
-          if (cleanWordNormalized == cleanSearchQuery) {
-            highlightThis = true;
-          } else {
-            // Պահպանենք նաեւ ուղիղ համընկնումը (հին տարբերակը)
-            final originalCleanWord =
-                word.replaceAll(RegExp(r'[.,;:!?]'), '').toLowerCase().trim();
-            final originalSearchQuery = widget.searchQuery
-                .replaceAll(RegExp(r'[.,;:!?]'), '')
-                .toLowerCase()
-                .trim();
-
-            if (originalCleanWord == originalSearchQuery) {
-              highlightThis = true;
-            }
-          }
-        }
-      }
-
-      final verseKey = verseNumber != null ? 'verse_$verseNumber' : null;
-      final verseNumKey =
-          verseNumber != null ? 'verse_${verseNumber}_num' : null;
-      final isVerseSelectedByKey = verseNumber != null &&
-          (selectedWordKey == verseKey || selectedWordKey == verseNumKey);
-      final isVerseMultiSelected =
-          verseNumber != null && _selectedVerses.containsKey(verseNumber);
-
-      if (highlightThis) {
-        for (int k = 0; k < highlightLength && (i + k) < words.length; k++) {
-          final highlightWord = words[i + k];
-          final separator =
-              ((i + k) < words.length - 1 && words[i + k + 1].trim().isNotEmpty)
-                  ? ' '
-                  : '';
-
-          final wordTapRecognizer = TapGestureRecognizer()
-            ..onTap = () {
-              if (verseNumber != null && verseText.isNotEmpty) {
-                final alreadySelected = _selectedVerses.containsKey(
-                  verseNumber,
-                );
-
-                // Сначала переключаем выделение стиха
-                _toggleVerseSelection(verseNumber, verseText);
-
-                // Если стих уже был выделен, второе нажатие только снимает
-                // выделение и не открывает панель действий
-                if (alreadySelected) return;
-
-                VerseHelper.handleWordClick(
-                  context,
-                  bookName,
-                  chapterNumber,
-                  verseNumber,
-                  verseText,
-                  null,
-                  onWordClick: onWordClick,
-                );
-              }
-            };
-
-          children.add(
-            TextSpan(
-              text: highlightWord + separator,
-              style: baseStyle.copyWith(
-                color: Colors.blue,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 0.5,
-              ),
-              recognizer: wordTapRecognizer,
-            ),
-          );
-        }
-
-        i += highlightLength;
-      } else {
-        final separator =
-            (i < words.length - 1 && words[i + 1].trim().isNotEmpty) ? ' ' : '';
-
-        final wordTapRecognizer = TapGestureRecognizer()
-          ..onTap = () {
-            if (verseNumber != null && verseText.isNotEmpty) {
-              final alreadySelected = _selectedVerses.containsKey(verseNumber);
-
-              // Сначала переключаем выделение стиха
-              _toggleVerseSelection(verseNumber, verseText);
-
-              // Если стих уже был выделен, второе нажатие только снимает
-              // выделение и не открывает панель действий
-              if (alreadySelected) return;
-
-              VerseHelper.handleWordClick(
-                context,
-                bookName,
-                chapterNumber,
-                verseNumber,
-                verseText,
-                null,
-                onWordClick: onWordClick,
-              );
-            }
-          };
-
-        children.add(
-          TextSpan(
-            text: word + separator,
-            style: baseStyle.copyWith(
-              letterSpacing: 0.2,
-              wordSpacing: 1.5,
-              backgroundColor: (isVerseSelectedByKey || isVerseMultiSelected)
-                  ? AppColors.olive.withValues(alpha: 0.18)
-                  : null,
-            ),
-            recognizer: wordTapRecognizer,
-          ),
-        );
-
-        i++;
-      }
-    }
   }
 }
 

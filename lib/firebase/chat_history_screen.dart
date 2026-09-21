@@ -46,10 +46,14 @@ class _ChatHistoryScreenState extends State<ChatHistoryScreen> {
           }
 
           if (snapshot.hasError) {
-            return Center(
-              child: Text(
-                'Չհաջողվեց բեռնել զրույցները։',
-                style: TextStyle(color: AppColors.text(isDark)),
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 28),
+              child: Center(
+                child: Text(
+                  'Չհաջողվեց բեռնել զրույցները։',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: AppColors.text(isDark)),
+                ),
               ),
             );
           }
@@ -57,10 +61,17 @@ class _ChatHistoryScreenState extends State<ChatHistoryScreen> {
           final chats = snapshot.data?.docs ?? [];
 
           if (chats.isEmpty) {
-            return Center(
-              child: Text(
-                'Դեռևս պահպանված զրույցներ չկան։',
-                style: TextStyle(color: AppColors.muted(isDark)),
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 28),
+              child: Center(
+                child: Text(
+                  'Դեռևս պահպանված զրույցներ չկան։',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    height: 1.4,
+                    color: AppColors.muted(isDark),
+                  ),
+                ),
               ),
             );
           }

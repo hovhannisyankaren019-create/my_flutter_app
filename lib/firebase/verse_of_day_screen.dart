@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 
 class VerseOfDayHomeCard extends StatelessWidget {
   final bool isDark;
-  final void Function(String text, String reference)? onOpen;
+  final void Function(String text, String reference, String edition)? onOpen;
 
   const VerseOfDayHomeCard({
     super.key,
@@ -42,6 +42,7 @@ class VerseOfDayHomeCard extends StatelessWidget {
         final data = snapshot.data?.data() ?? {};
         final text = data['text'] as String? ?? '';
         final reference = data['reference'] as String? ?? '';
+        final edition = '${data['edition'] ?? data['translation'] ?? data['source'] ?? ''}';
         final hasVerse = text.trim().isNotEmpty;
 
         return Column(
@@ -81,7 +82,9 @@ class VerseOfDayHomeCard extends StatelessWidget {
                   : const Color(0xFFD4DDD2),
               borderRadius: BorderRadius.circular(22),
               child: InkWell(
-                onTap: hasVerse ? () => onOpen?.call(text, reference) : null,
+                onTap: hasVerse
+                    ? () => onOpen?.call(text, reference, edition)
+                    : null,
                 borderRadius: BorderRadius.circular(22),
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(18, 16, 12, 16),
