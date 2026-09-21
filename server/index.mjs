@@ -1402,9 +1402,14 @@ async function handleTelegram(req, res, body) {
             " iPhone-ին չգնաց. TestFlight հավելվածը մեկ անգամ բացեք և թույլ տվեք ծանուցումները։ Android-ը ժամանակավոր անջատված է։";
         } else if (String(pushResult).startsWith("fcm_no_ios")) {
           const reason = String(pushResult).slice("fcm_no_ios:".length);
-          if (reason.includes("THIRD_PARTY_AUTH") || reason.includes("Auth error from APNS")) {
+          if (
+            reason.includes("Invalid APNs credential") ||
+            reason.includes("UNAUTHENTICATED") ||
+            reason.includes("THIRD_PARTY_AUTH") ||
+            reason.includes("Auth error from APNS")
+          ) {
             pushNote =
-              ` iPhone FCM չանցավ. Firebase → Cloud Messaging → iOS → APNs Authentication Key. Բարձրացրու Production .p8-ը։ ${reason}`;
+              " iPhone FCM չանցավ. Firebase-ում Apple բանալի չկա։ Console → Project settings → Cloud Messaging → Apple app → APNs Authentication Key։ Բարձրացրու AuthKey_C5…2X.p8, Key ID-ն ու Team ID-ն։ FIREBASE_SERVICE_ACCOUNT-ը մի՛ փոխիր։";
           } else if (reason.includes("InvalidProviderToken")) {
             pushNote =
               ` iPhone չգնաց. Production Key ID-ն ու .p8-ը իրար չեն պատկանում։ Downloads-ում բացիր այն AuthKey ֆայլը, որի անունը համընկնում է KEY_ID-ի հետ (C5…2X), և նորից դրիր APNS_KEY_P8։ ${reason}`;
