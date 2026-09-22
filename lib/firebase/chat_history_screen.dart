@@ -35,6 +35,16 @@ class _ChatHistoryScreenState extends State<ChatHistoryScreen> {
             color: AppColors.text(isDark),
           ),
         ),
+        actions: [
+          IconButton(
+            tooltip: 'Նոր նամակագրություն',
+            icon: Icon(
+              Icons.edit_outlined,
+              color: AppColors.text(isDark),
+            ),
+            onPressed: () => Navigator.pop(context, true),
+          ),
+        ],
       ),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: _chatService.streamChats(),

@@ -127,7 +127,7 @@ class VerseOfDayHomeCard extends StatelessWidget {
                                     );
                                   },
                                   icon: Icon(
-                                    Icons.ios_share,
+                                    Icons.content_copy,
                                     size: 18,
                                     color: titleColor,
                                   ),

@@ -47,6 +47,14 @@ class AppColors {
   static const darkKjv = Color(0xFF7A6854);
   static const verseCardLight = Color(0xFFF7F5EF);
   static const verseCardDark = Color(0xFF5A6158);
+  static const araratCard = Color(0xFF3E4A41);
+  static const tbsCard = Color(0xFF8C886C);
+  static const synodCard = Color(0xFF667B87);
+  static const kjvCard = Color(0xFF8D765C);
+  static const araratCardDark = Color(0xFF4A534C);
+  static const tbsCardDark = Color(0xFF7A7763);
+  static const synodCardDark = Color(0xFF5D7280);
+  static const kjvCardDark = Color(0xFF816E58);
 
   static Color bg(bool isDark) => isDark ? darkBg : lightBg;
   static Color text(bool isDark) => isDark ? darkText : lightText;
@@ -118,6 +126,69 @@ String bibleTestamentLabel(String armenianTitle, String edition) {
   return armenianTitle;
 }
 
+String bibleCategoryLabel(String armenianTitle, String edition) {
+  if (edition == _bibleEditionSynod) {
+    switch (armenianTitle) {
+      case 'Օրենք':
+        return 'Закон';
+      case 'Պատմական գրքեր':
+        return 'Исторические книги';
+      case 'Բանաստեղծական և իմաստության գրքեր':
+        return 'Учительные книги';
+      case 'Մեծ մարգարեներ':
+        return 'Великие пророки';
+      case 'Փոքր մարգարեներ':
+        return 'Малые пророки';
+      case 'Ավետարաններ':
+        return 'Евангелия';
+      case 'Պողոս առաքյալի նամակներ':
+        return 'Послания Павла';
+      case 'Ընդհանուր նամակներ':
+        return 'Соборные послания';
+      case 'Մարգարեական':
+        return 'Откровение';
+    }
+  }
+  if (edition == _bibleEditionKjv) {
+    switch (armenianTitle) {
+      case 'Օրենք':
+        return 'Law';
+      case 'Պատմական գրքեր':
+        return 'Historical books';
+      case 'Բանաստեղծական և իմաստության գրքեր':
+        return 'Poetry and Wisdom';
+      case 'Մեծ մարգարեներ':
+        return 'Major prophets';
+      case 'Փոքր մարգարեներ':
+        return 'Minor prophets';
+      case 'Ավետարաններ':
+        return 'Gospels';
+      case 'Պողոս առաքյալի նամակներ':
+        return 'Pauline epistles';
+      case 'Ընդհանուր նամակներ':
+        return 'General epistles';
+      case 'Մարգարեական':
+        return 'Revelation';
+    }
+  }
+  return armenianTitle;
+}
+
+String bibleChapterCountLabel(int count, String edition) {
+  if (edition == _bibleEditionSynod) {
+    final mod100 = count % 100;
+    final mod10 = count % 10;
+    if (mod100 >= 11 && mod100 <= 14) return '$count глав';
+    if (mod10 == 1) return '$count глава';
+    if (mod10 >= 2 && mod10 <= 4) return '$count главы';
+    return '$count глав';
+  }
+  if (edition == _bibleEditionKjv) {
+    return count == 1 ? '1 chapter' : '$count chapters';
+  }
+  return '$count գլուխ';
+}
+
 class _BibleUiStrings {
   final String compare;
   final String copy;
@@ -129,6 +200,10 @@ class _BibleUiStrings {
   final String selectedAlreadySaved;
   final String versesWord;
   final String fontSizeTitle;
+  final String ai;
+  final String previous;
+  final String next;
+  final String chapterNav;
 
   const _BibleUiStrings({
     required this.compare,
@@ -141,6 +216,10 @@ class _BibleUiStrings {
     required this.selectedAlreadySaved,
     required this.versesWord,
     required this.fontSizeTitle,
+    required this.ai,
+    required this.previous,
+    required this.next,
+    required this.chapterNav,
   });
 }
 
@@ -155,6 +234,10 @@ const _armenianUiStrings = _BibleUiStrings(
   selectedAlreadySaved: 'Ընտրված հատվածները արդեն պահված են',
   versesWord: 'հատված',
   fontSizeTitle: 'Տառերի չափ',
+  ai: 'ԱԲ',
+  previous: 'Նախորդ',
+  next: 'Հաջորդ',
+  chapterNav: 'Գլուխ',
 );
 
 const _russianUiStrings = _BibleUiStrings(
@@ -168,6 +251,10 @@ const _russianUiStrings = _BibleUiStrings(
   selectedAlreadySaved: 'Выбранные стихи уже сохранены',
   versesWord: 'стихов',
   fontSizeTitle: 'Размер шрифта',
+  ai: 'ИИ',
+  previous: 'Назад',
+  next: 'Далее',
+  chapterNav: 'Глава',
 );
 
 const _englishUiStrings = _BibleUiStrings(
@@ -181,12 +268,185 @@ const _englishUiStrings = _BibleUiStrings(
   selectedAlreadySaved: 'Selected verses are already saved',
   versesWord: 'verses',
   fontSizeTitle: 'Font size',
+  ai: 'AI',
+  previous: 'Previous',
+  next: 'Next',
+  chapterNav: 'Chapter',
 );
 
 _BibleUiStrings bibleUiStrings(String edition) {
   if (edition == _bibleEditionSynod) return _russianUiStrings;
   if (edition == _bibleEditionKjv) return _englishUiStrings;
   return _armenianUiStrings;
+}
+
+PreferredSizeWidget _bibleReaderAppBar({
+  required bool isDark,
+  required String title,
+  required VoidCallback onBack,
+  required VoidCallback onFontSize,
+}) {
+  return AppBar(
+    backgroundColor: AppColors.bg(isDark),
+    foregroundColor: AppColors.text(isDark),
+    elevation: 0,
+    scrolledUnderElevation: 0,
+    leading: IconButton(
+      icon: const Icon(Icons.chevron_left, size: 34),
+      onPressed: onBack,
+    ),
+    title: Text(
+      title,
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(
+        fontSize: 24,
+        fontWeight: FontWeight.w700,
+        height: 1.15,
+        color: AppColors.text(isDark),
+      ),
+    ),
+    centerTitle: false,
+    titleSpacing: 0,
+    actions: [
+      IconButton(
+        onPressed: onFontSize,
+        tooltip: 'Տառերի չափ',
+        icon: SizedBox(
+          width: 32,
+          height: 24,
+          child: Stack(
+            alignment: Alignment.bottomCenter,
+            children: [
+              Positioned(
+                left: 0,
+                bottom: 1,
+                child: Text(
+                  'T',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    height: 1,
+                    color: AppColors.text(isDark),
+                  ),
+                ),
+              ),
+              Positioned(
+                right: 0,
+                bottom: 0,
+                child: Text(
+                  'T',
+                  style: TextStyle(
+                    fontSize: 21,
+                    fontWeight: FontWeight.w700,
+                    height: 1,
+                    color: AppColors.text(isDark),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      const SizedBox(width: 4),
+    ],
+  );
+}
+
+Widget _bibleReaderBottomNav({
+  required bool isDark,
+  required String edition,
+  required int chapterNumber,
+  required int totalChapters,
+  required bool hasPrevious,
+  required bool hasNext,
+  required VoidCallback? onPrevious,
+  required VoidCallback? onNext,
+}) {
+  final strings = bibleUiStrings(edition);
+  final muted = AppColors.muted(isDark);
+  final active = AppColors.text(isDark);
+  return Material(
+    color: AppColors.bg(isDark),
+    child: SafeArea(
+      top: false,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(8, 10, 8, 8),
+        decoration: BoxDecoration(
+          border: Border(
+            top: BorderSide(
+              color: isDark ? const Color(0xFF6A7268) : const Color(0xFFD4CFC2),
+              width: 0.8,
+            ),
+          ),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: TextButton(
+                onPressed: hasPrevious ? onPrevious : null,
+                style: TextButton.styleFrom(
+                  foregroundColor: hasPrevious ? active : muted,
+                  disabledForegroundColor: muted.withValues(alpha: 0.45),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.chevron_left,
+                      size: 20,
+                      color: hasPrevious ? active : muted.withValues(alpha: 0.45),
+                    ),
+                    Flexible(
+                      child: Text(
+                        strings.previous,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Text(
+              '${strings.chapterNav} $chapterNumber / $totalChapters',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: muted,
+              ),
+            ),
+            Expanded(
+              child: TextButton(
+                onPressed: hasNext ? onNext : null,
+                style: TextButton.styleFrom(
+                  foregroundColor: hasNext ? active : muted,
+                  disabledForegroundColor: muted.withValues(alpha: 0.45),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        strings.next,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                    Icon(
+                      Icons.chevron_right,
+                      size: 20,
+                      color: hasNext ? active : muted.withValues(alpha: 0.45),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 String _foldArmRef(String value) {
@@ -577,10 +837,17 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   bool _popInnerRoute() {
-    final nav = _navKeys[_tabIndex].currentState;
-    if (nav != null && nav.canPop()) {
-      nav.pop();
+    final current = _navKeys[_tabIndex].currentState;
+    if (current != null && current.canPop()) {
+      current.pop();
       return true;
+    }
+    for (final key in _navKeys) {
+      final nav = key.currentState;
+      if (nav != null && nav.canPop()) {
+        nav.pop();
+        return true;
+      }
     }
     return false;
   }
@@ -608,9 +875,7 @@ class _HomeScreenState extends State<HomeScreen> {
         if (_popInnerRoute()) return;
         if (_tabIndex != 0) {
           _onTabSelected(0);
-          return;
         }
-        SystemNavigator.pop();
       },
       child: Scaffold(
         backgroundColor: AppColors.bg(widget.isDark),
@@ -955,40 +1220,51 @@ class _HomeTab extends StatelessWidget {
             onOpen: (text, reference, edition) =>
                 _openHomeVerseOfDay(context, text, reference, edition),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 12),
+            child: Text(
+              'Աստվածաշնչի թարգմանություն',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: AppColors.text(isDark),
+              ),
+            ),
+          ),
           Row(
             children: [
               _HomeEditionCard(
                 title: 'Արարատ',
                 subtitle: 'Աստվածաշունչ',
-                color: isDark ? AppColors.darkForest : AppColors.forest,
+                color: isDark ? AppColors.araratCardDark : AppColors.araratCard,
                 onTap: onOpenArarat,
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: 12),
               _HomeEditionCard(
                 title: 'TBS',
                 subtitle: 'Աստվածաշունչ',
-                color: isDark ? AppColors.darkOlive : AppColors.olive,
+                color: isDark ? AppColors.tbsCardDark : AppColors.tbsCard,
                 onTap: onOpenTbs,
               ),
             ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
           Row(
             children: [
               _HomeEditionCard(
                 title: 'Библия',
-                subtitle: 'Синодальный\nперевод',
+                subtitle: 'Синодальный перевод',
                 localeTag: 'RU',
-                color: isDark ? AppColors.darkSynod : AppColors.synodBlue,
+                color: isDark ? AppColors.synodCardDark : AppColors.synodCard,
                 onTap: onOpenSynod,
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: 12),
               _HomeEditionCard(
                 title: 'Bible',
                 subtitle: 'King James',
                 localeTag: 'EN',
-                color: isDark ? AppColors.darkKjv : AppColors.kjvBrown,
+                color: isDark ? AppColors.kjvCardDark : AppColors.kjvCard,
                 onTap: onOpenKjv,
               ),
             ],
@@ -1091,72 +1367,88 @@ class _HomeEditionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Expanded(
-      child: Material(
-        color: color,
-        borderRadius: BorderRadius.circular(22),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(22),
-          child: SizedBox(
-            height: 124,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(14, 14, 10, 14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+      child: AspectRatio(
+        aspectRatio: 1,
+        child: Material(
+          color: color,
+          borderRadius: BorderRadius.circular(26),
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(26),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final w = constraints.maxWidth;
+                final pad = (w * 0.09).clamp(10.0, 16.0);
+                final iconSize = (w * 0.12).clamp(18.0, 22.0);
+                final titleSize = (w * 0.11).clamp(15.0, 20.0);
+                final subSize = (w * 0.078).clamp(11.0, 14.0);
+                final tagSize = (w * 0.065).clamp(10.0, 12.0);
+                return Padding(
+                  padding: EdgeInsets.fromLTRB(pad, pad, pad - 2, pad - 2),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(
-                        Icons.menu_book_outlined,
-                        color: AppColors.cream,
-                        size: 20,
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.menu_book_outlined,
+                            color: AppColors.cream,
+                            size: iconSize,
+                          ),
+                          const Spacer(),
+                          Icon(
+                            Icons.chevron_right,
+                            color: AppColors.cream,
+                            size: iconSize,
+                          ),
+                        ],
                       ),
                       const Spacer(),
-                      const Icon(
-                        Icons.chevron_right,
-                        color: AppColors.cream,
-                        size: 20,
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          title,
+                          maxLines: 1,
+                          style: TextStyle(
+                            color: AppColors.cream,
+                            fontSize: titleSize,
+                            fontWeight: FontWeight.w700,
+                            height: 1.1,
+                          ),
+                        ),
                       ),
+                      SizedBox(height: w * 0.02),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          subtitle.replaceAll('\n', ' '),
+                          maxLines: 1,
+                          style: TextStyle(
+                            color: AppColors.cream.withValues(alpha: 0.92),
+                            fontSize: subSize,
+                            fontWeight: FontWeight.w500,
+                            height: 1.1,
+                          ),
+                        ),
+                      ),
+                      if (localeTag != null) ...[
+                        SizedBox(height: w * 0.035),
+                        Text(
+                          localeTag!,
+                          style: TextStyle(
+                            color: AppColors.cream.withValues(alpha: 0.72),
+                            fontSize: tagSize,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
-                  const Spacer(),
-                  Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppColors.cream,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      height: 1.15,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: AppColors.cream.withValues(alpha: 0.92),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      height: 1.15,
-                    ),
-                  ),
-                  if (localeTag != null) ...[
-                    const SizedBox(height: 6),
-                    Text(
-                      localeTag!,
-                      style: TextStyle(
-                        color: AppColors.cream.withValues(alpha: 0.7),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.6,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
+                );
+              },
             ),
           ),
         ),
@@ -1457,7 +1749,8 @@ class _AraratBooksViewState extends State<_AraratBooksView> {
           Padding(
             padding: const EdgeInsets.only(left: 4, bottom: 8, top: 6),
             child: Text(
-              testament.categories[c].title.toUpperCase(),
+              bibleCategoryLabel(testament.categories[c].title, widget.edition)
+                  .toUpperCase(),
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
@@ -2108,7 +2401,7 @@ class _ChaptersScreenState extends State<ChaptersScreen> {
               ),
             ),
             Text(
-              '${widget.chapters} գլուխ',
+              bibleChapterCountLabel(widget.chapters, widget.edition),
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
@@ -3598,7 +3891,7 @@ Future<void> showVerseActionSheet({
                   children: [
                     tile(
                       icon: Icons.auto_awesome,
-                      label: 'ԱԲ',
+                      label: strings.ai,
                       onTap: () {
                         Navigator.pop(dialogContext);
                         var guest = true;
@@ -4271,42 +4564,16 @@ class _ChapterTextScreenState extends State<ChapterTextScreen> {
     final bool hasNextChapter = widget.chapterNumber < totalChapters;
 
     return Scaffold(
-      appBar: AppBar(
-        title: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: isDark ? AppColors.darkForest : AppColors.lightChip,
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Text(
-            bibleBookLabel(widget.bookName, widget.edition),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w500,
-              height: 1.2,
-              color: isDark ? AppColors.darkText : AppColors.lightText,
-            ),
-          ),
-        ),
-        centerTitle: true,
-        leading: IconButton(
-          icon: const Icon(Icons.close),
-          onPressed: () {
-            ScaffoldMessenger.of(context).hideCurrentSnackBar();
-            Navigator.pop(context);
-          },
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.format_size),
-            tooltip: 'Տառերի չափ',
-            onPressed: _showFontSizeSheet,
-          ),
-        ],
+      backgroundColor: AppColors.bg(isDark),
+      appBar: _bibleReaderAppBar(
+        isDark: isDark,
+        title:
+            '${bibleBookLabel(widget.bookName, widget.edition)} ${widget.chapterNumber}',
+        onBack: () {
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          Navigator.pop(context);
+        },
+        onFontSize: _showFontSizeSheet,
       ),
       body: GestureDetector(
         onTap: () {
@@ -4317,7 +4584,7 @@ class _ChapterTextScreenState extends State<ChapterTextScreen> {
           children: [
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.all(16.0),
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
                 child: SingleChildScrollView(
                   controller: _scrollController, // Ավելացրել եմ
                   child: VerseHelper.buildClickableVerseText(
@@ -4368,23 +4635,19 @@ class _ChapterTextScreenState extends State<ChapterTextScreen> {
                 ),
               ),
             ),
-            Container(
-              height: 100,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: isDark ? AppColors.darkBg : AppColors.lightBg,
-                border: Border(
-                  top: BorderSide(
-                    color: isDark ? AppColors.darkForest : AppColors.lightChip,
-                    width: 1,
-                  ),
-                ),
-              ),
-              child: _buildNavigationControls(
-                isDark,
-                hasPreviousChapter,
-                hasNextChapter,
-              ),
+            _bibleReaderBottomNav(
+              isDark: isDark,
+              edition: widget.edition,
+              chapterNumber: widget.chapterNumber,
+              totalChapters: totalChapters,
+              hasPrevious: hasPreviousChapter,
+              hasNext: hasNextChapter,
+              onPrevious: hasPreviousChapter
+                  ? () => _openChapter(widget.chapterNumber - 1)
+                  : null,
+              onNext: hasNextChapter
+                  ? () => _openChapter(widget.chapterNumber + 1)
+                  : null,
             ),
           ],
         ),
@@ -5262,39 +5525,13 @@ class _ChapterTextScreenWithHighlightState
     final bool hasNextChapter = widget.chapterNumber < totalChapters;
 
     return Scaffold(
-      appBar: AppBar(
-        title: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: isDark ? AppColors.darkForest : AppColors.lightChip,
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Text(
+      backgroundColor: AppColors.bg(isDark),
+      appBar: _bibleReaderAppBar(
+        isDark: isDark,
+        title:
             '${bibleBookLabel(widget.bookName, widget.edition)} ${widget.chapterNumber}',
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w500,
-              height: 1.2,
-              color: isDark ? AppColors.darkText : AppColors.lightText,
-            ),
-          ),
-        ),
-        centerTitle: true,
-        leading: IconButton(
-          icon: const Icon(Icons.close),
-          onPressed: () => Navigator.pop(context),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.format_size),
-            tooltip: 'Տառերի չափ',
-            onPressed: _showFontSizeSheet,
-          ),
-        ],
+        onBack: () => Navigator.pop(context),
+        onFontSize: _showFontSizeSheet,
       ),
       body: GestureDetector(
         onTap: () {
@@ -5305,7 +5542,7 @@ class _ChapterTextScreenWithHighlightState
           children: [
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.all(16.0),
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
                 child: SingleChildScrollView(
                   controller: _scrollController,
                   child: VerseHelper.buildClickableVerseText(
@@ -5351,128 +5588,47 @@ class _ChapterTextScreenWithHighlightState
                 ),
               ),
             ),
-            Container(
-              height: 100,
-              alignment: Alignment.center,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  GestureDetector(
-                    onTap: hasPreviousChapter
-                        ? () {
-                            Navigator.pushReplacement(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => ChapterTextScreenWithHighlight(
-                                  bookName: widget.bookName,
-                                  chapterNumber: widget.chapterNumber - 1,
-                                  searchQuery: widget.searchQuery,
-                                  targetVerse: null,
-                                  targetWord: null,
-                                  edition: widget.edition,
-                                ),
-                              ),
-                            );
-                          }
-                        : null,
-                    child: Container(
-                      width: 44,
-                      height: 44,
-                      margin: const EdgeInsets.symmetric(horizontal: 10),
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: hasPreviousChapter
-                            ? AppColors.forestTone(isDark)
-                            : AppColors.olive,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.1),
-                            blurRadius: 4,
-                            offset: const Offset(0, 2),
+            _bibleReaderBottomNav(
+              isDark: isDark,
+              edition: widget.edition,
+              chapterNumber: widget.chapterNumber,
+              totalChapters: totalChapters,
+              hasPrevious: hasPreviousChapter,
+              hasNext: hasNextChapter,
+              onPrevious: hasPreviousChapter
+                  ? () {
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ChapterTextScreenWithHighlight(
+                            bookName: widget.bookName,
+                            chapterNumber: widget.chapterNumber - 1,
+                            searchQuery: widget.searchQuery,
+                            targetVerse: null,
+                            targetWord: null,
+                            edition: widget.edition,
                           ),
-                        ],
-                      ),
-                      child: const Padding(
-                        padding: EdgeInsets.only(right: 2),
-                        child: Icon(
-                          Icons.arrow_back_ios_new,
-                          size: 18,
-                          color: AppColors.cream,
                         ),
-                      ),
-                    ),
-                  ),
-                  Container(
-                    height: 44,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color:
-                          isDark ? AppColors.darkForest : AppColors.lightChip,
-                      borderRadius: BorderRadius.circular(22),
-                    ),
-                    child: Text(
-                      '${widget.chapterNumber}',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                        height: 1.0,
-                        color:
-                            isDark ? AppColors.darkText : AppColors.lightText,
-                      ),
-                    ),
-                  ),
-                  GestureDetector(
-                    onTap: hasNextChapter
-                        ? () {
-                            Navigator.pushReplacement(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => ChapterTextScreenWithHighlight(
-                                  bookName: widget.bookName,
-                                  chapterNumber: widget.chapterNumber + 1,
-                                  searchQuery: widget.searchQuery,
-                                  targetVerse: null,
-                                  targetWord: null,
-                                  edition: widget.edition,
-                                ),
-                              ),
-                            );
-                          }
-                        : null,
-                    child: Container(
-                      width: 44,
-                      height: 44,
-                      margin: const EdgeInsets.symmetric(horizontal: 10),
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: hasNextChapter
-                            ? AppColors.forestTone(isDark)
-                            : AppColors.olive,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.1),
-                            blurRadius: 4,
-                            offset: const Offset(0, 2),
+                      );
+                    }
+                  : null,
+              onNext: hasNextChapter
+                  ? () {
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ChapterTextScreenWithHighlight(
+                            bookName: widget.bookName,
+                            chapterNumber: widget.chapterNumber + 1,
+                            searchQuery: widget.searchQuery,
+                            targetVerse: null,
+                            targetWord: null,
+                            edition: widget.edition,
                           ),
-                        ],
-                      ),
-                      child: const Padding(
-                        padding: EdgeInsets.only(left: 2),
-                        child: Icon(
-                          Icons.arrow_forward_ios,
-                          size: 18,
-                          color: AppColors.cream,
                         ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+                      );
+                    }
+                  : null,
             ),
           ],
         ),

@@ -298,6 +298,16 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
     });
   }
 
+  void _startNewChat() {
+    if (_sending) return;
+    FocusScope.of(context).unfocus();
+    _controller.clear();
+    setState(() {
+      _chatId = null;
+      _messages.clear();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -338,17 +348,28 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
               ),
               onPressed: widget.onRequestAccount,
             ),
+          IconButton(
+            tooltip: 'Նոր նամակագրություն',
+            icon: Icon(
+              Icons.edit_outlined,
+              color: AppColors.text(isDark),
+            ),
+            onPressed: _sending ? null : _startNewChat,
+          ),
           if (!_isGuest)
             IconButton(
               tooltip: 'Նախորդ զրույցներ',
               icon: const Icon(Icons.history),
-              onPressed: () {
-                Navigator.push(
+              onPressed: () async {
+                final startNew = await Navigator.push<bool>(
                   context,
                   MaterialPageRoute(
                     builder: (_) => const ChatHistoryScreen(),
                   ),
                 );
+                if (startNew == true && mounted) {
+                  _startNewChat();
+                }
               },
             ),
           if (!_isGuest)
