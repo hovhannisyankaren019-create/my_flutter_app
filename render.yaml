@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: ararat-bible-spiritual-ai
+    runtime: node
+    region: frankfurt
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
+      - key: SPIRITUAL_AI_GATE
+        value: ararat-bible-local-gate
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: IMAGE_PROVIDER
+        value: pollinations
+      - key: FIREBASE_PROJECT_ID
+        value: spiritual-ai-414c4
+      - key: FIREBASE_SERVICE_ACCOUNT
+        sync: false
+      - key: APNS_KEY_ID
+        value: 7AGFZKQQ83
+      - key: APNS_TEAM_ID
+        value: 68VK3CMGBQ
+      - key: APNS_BUNDLE_ID
+        value: com.armenianbible.bible
+      - key: APNS_KEY_P8
+        sync: false

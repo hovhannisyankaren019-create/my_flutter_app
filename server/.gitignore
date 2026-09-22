@@ -1,0 +1,8 @@
+.env
+.env.*
+!.env.example
+node_modules/
+firebase-adminsdk.json
+*-firebase-adminsdk-*.json
+apns.p8
+AuthKey_*.p8
