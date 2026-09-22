@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 class VerseOfDayHomeCard extends StatelessWidget {
   final bool isDark;
@@ -45,106 +46,124 @@ class VerseOfDayHomeCard extends StatelessWidget {
         final edition = '${data['edition'] ?? data['translation'] ?? data['source'] ?? ''}';
         final hasVerse = text.trim().isNotEmpty;
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: Row(
-                children: [
-                  Text(
-                    'Օրվա խոսք',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: isDark
-                          ? const Color(0xFFE6E3DB)
-                          : const Color(0xFF3D463F),
+        final quoted = hasVerse
+            ? (text.trim().startsWith('«') ? text.trim() : '«${text.trim()}»')
+            : 'Դեռևս Օրվա Խոսք ավելացված չէ։';
+        final lineColor = isDark
+            ? const Color(0xFFD8D3C4)
+            : const Color(0xFF8A8768);
+        final cardColor = isDark
+            ? const Color(0xFF5A6158)
+            : const Color(0xFFF7F5EF);
+        final titleColor = isDark
+            ? const Color(0xFFB8B6A6)
+            : const Color(0xFF8A8768);
+        final bodyColor = hasVerse
+            ? (isDark ? const Color(0xFFE6E3DB) : const Color(0xFF3D463F))
+            : (isDark ? const Color(0xFF8E948C) : const Color(0xFFB8B6AE));
+
+        return Material(
+          color: cardColor,
+          borderRadius: BorderRadius.circular(22),
+          child: InkWell(
+            onTap: hasVerse
+                ? () => onOpen?.call(text, reference, edition)
+                : null,
+            borderRadius: BorderRadius.circular(22),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 16, 8, 16),
+              child: IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Container(
+                      width: 3,
+                      margin: const EdgeInsets.symmetric(vertical: 2),
+                      decoration: BoxDecoration(
+                        color: lineColor,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                     ),
-                  ),
-                  const Spacer(),
-                  Text(
-                    armenianDate(),
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: isDark
-                          ? const Color(0xFF8E948C)
-                          : const Color(0xFFB8B6AE),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 10),
-            Material(
-              color: isDark
-                  ? const Color(0xFF3A4A3C)
-                  : const Color(0xFFD4DDD2),
-              borderRadius: BorderRadius.circular(22),
-              child: InkWell(
-                onTap: hasVerse
-                    ? () => onOpen?.call(text, reference, edition)
-                    : null,
-                borderRadius: BorderRadius.circular(22),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 16, 12, 16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(
-                            child: Text(
-                              hasVerse
-                                  ? (text.trim().startsWith('«')
-                                      ? text.trim()
-                                      : '«${text.trim()}»')
-                                  : 'Դեռևս Օրվա Խոսք ավելացված չէ։',
-                              style: TextStyle(
-                                fontSize: 16,
-                                height: 1.45,
-                                color: hasVerse
-                                    ? (isDark
-                                        ? const Color(0xFFE6E3DB)
-                                        : const Color(0xFF3D463F))
-                                    : (isDark
-                                        ? const Color(0xFF8E948C)
-                                        : const Color(0xFFB8B6AE)),
+                          Row(
+                            children: [
+                              Text(
+                                'ՕՐՎԱ ԽՈՍՔ',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0.8,
+                                  color: titleColor,
+                                ),
                               ),
+                              const Spacer(),
+                              if (hasVerse)
+                                IconButton(
+                                  visualDensity: VisualDensity.compact,
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(
+                                    minWidth: 32,
+                                    minHeight: 32,
+                                  ),
+                                  onPressed: () async {
+                                    final shareText = reference.isEmpty
+                                        ? quoted
+                                        : '$quoted\n$reference';
+                                    await Clipboard.setData(
+                                      ClipboardData(text: shareText),
+                                    );
+                                    if (!context.mounted) return;
+                                    ScaffoldMessenger.of(context)
+                                        .hideCurrentSnackBar();
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Պատճենված է'),
+                                        duration: Duration(seconds: 1),
+                                      ),
+                                    );
+                                  },
+                                  icon: Icon(
+                                    Icons.ios_share,
+                                    size: 18,
+                                    color: titleColor,
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            quoted,
+                            style: TextStyle(
+                              fontSize: 16,
+                              height: 1.45,
+                              color: bodyColor,
                             ),
                           ),
-                          if (hasVerse)
-                            Padding(
-                              padding: const EdgeInsets.only(left: 8, top: 2),
-                              child: Icon(
-                                Icons.chevron_right,
+                          if (reference.isNotEmpty) ...[
+                            const SizedBox(height: 12),
+                            Text(
+                              reference,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
                                 color: isDark
-                                    ? const Color(0xFF8E948C)
-                                    : const Color(0xFFB8B6AE),
+                                    ? const Color(0xFFC4C0A8)
+                                    : const Color(0xFF3F4C41),
                               ),
                             ),
+                          ],
                         ],
                       ),
-                      if (reference.isNotEmpty) ...[
-                        const SizedBox(height: 10),
-                        Text(
-                          reference,
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
-                            color: isDark
-                                ? const Color(0xFF8A8768)
-                                : const Color(0xFF3F4C41),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             ),
-          ],
+          ),
         );
       },
     );

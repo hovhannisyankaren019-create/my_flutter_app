@@ -41,6 +41,12 @@ class AppColors {
   static const darkForest = Color(0xFF3F4940);
   static const darkOlive = Color(0xFF7A7C68);
   static const lightChip = Color(0xFFE4E0D4);
+  static const synodBlue = Color(0xFF5E6E7A);
+  static const kjvBrown = Color(0xFF8C7358);
+  static const darkSynod = Color(0xFF5A6870);
+  static const darkKjv = Color(0xFF7A6854);
+  static const verseCardLight = Color(0xFFF7F5EF);
+  static const verseCardDark = Color(0xFF5A6158);
 
   static Color bg(bool isDark) => isDark ? darkBg : lightBg;
   static Color text(bool isDark) => isDark ? darkText : lightText;
@@ -949,49 +955,40 @@ class _HomeTab extends StatelessWidget {
             onOpen: (text, reference, edition) =>
                 _openHomeVerseOfDay(context, text, reference, edition),
           ),
-          const SizedBox(height: 28),
-          Padding(
-            padding: const EdgeInsets.only(left: 4, bottom: 12),
-            child: Text(
-              'Աստվածաշնչի թարգմանությունը',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: AppColors.text(isDark),
-              ),
-            ),
-          ),
+          const SizedBox(height: 18),
           Row(
             children: [
               _HomeEditionCard(
                 title: 'Արարատ',
+                subtitle: 'Աստվածաշունչ',
                 color: isDark ? AppColors.darkForest : AppColors.forest,
-                showChevron: true,
                 onTap: onOpenArarat,
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: 14),
               _HomeEditionCard(
                 title: 'TBS',
+                subtitle: 'Աստվածաշունչ',
                 color: isDark ? AppColors.darkOlive : AppColors.olive,
-                showChevron: true,
                 onTap: onOpenTbs,
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
           Row(
             children: [
               _HomeEditionCard(
-                title: 'Синодальный',
-                color: isDark ? AppColors.darkForest : AppColors.forest,
-                showChevron: true,
+                title: 'Библия',
+                subtitle: 'Синодальный\nперевод',
+                localeTag: 'RU',
+                color: isDark ? AppColors.darkSynod : AppColors.synodBlue,
                 onTap: onOpenSynod,
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: 14),
               _HomeEditionCard(
-                title: 'King James Version',
-                color: isDark ? AppColors.darkOlive : AppColors.olive,
-                showChevron: true,
+                title: 'Bible',
+                subtitle: 'King James',
+                localeTag: 'EN',
+                color: isDark ? AppColors.darkKjv : AppColors.kjvBrown,
                 onTap: onOpenKjv,
               ),
             ],
@@ -1078,30 +1075,32 @@ class _HomeTab extends StatelessWidget {
 
 class _HomeEditionCard extends StatelessWidget {
   final String title;
+  final String subtitle;
+  final String? localeTag;
   final Color color;
-  final bool showChevron;
   final VoidCallback onTap;
 
   const _HomeEditionCard({
     required this.title,
+    required this.subtitle,
     required this.color,
     required this.onTap,
-    this.showChevron = false,
+    this.localeTag,
   });
 
   @override
   Widget build(BuildContext context) {
     return Expanded(
-      child: AspectRatio(
-        aspectRatio: 1,
-        child: Material(
-          color: color,
-          borderRadius: BorderRadius.circular(28),
-          child: InkWell(
-            onTap: onTap,
-            borderRadius: BorderRadius.circular(28),
+      child: Material(
+        color: color,
+        borderRadius: BorderRadius.circular(22),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(22),
+          child: SizedBox(
+            height: 124,
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(14, 16, 12, 16),
+              padding: const EdgeInsets.fromLTRB(14, 14, 10, 14),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -1110,15 +1109,14 @@ class _HomeEditionCard extends StatelessWidget {
                       const Icon(
                         Icons.menu_book_outlined,
                         color: AppColors.cream,
-                        size: 22,
+                        size: 20,
                       ),
                       const Spacer(),
-                      if (showChevron)
-                        const Icon(
-                          Icons.chevron_right,
-                          color: AppColors.cream,
-                          size: 22,
-                        ),
+                      const Icon(
+                        Icons.chevron_right,
+                        color: AppColors.cream,
+                        size: 20,
+                      ),
                     ],
                   ),
                   const Spacer(),
@@ -1128,26 +1126,35 @@ class _HomeEditionCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: AppColors.cream,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
                       height: 1.15,
                     ),
                   ),
                   const SizedBox(height: 2),
-                  const FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'Աստվածաշունչ',
-                      maxLines: 1,
-                      style: TextStyle(
-                        color: AppColors.cream,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                        height: 1.15,
-                      ),
+                  Text(
+                    subtitle,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: AppColors.cream.withValues(alpha: 0.92),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      height: 1.15,
                     ),
                   ),
+                  if (localeTag != null) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      localeTag!,
+                      style: TextStyle(
+                        color: AppColors.cream.withValues(alpha: 0.7),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.6,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
