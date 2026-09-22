@@ -95,9 +95,11 @@ class BibleContextRetriever {
   static final BibleContextRetriever instance = BibleContextRetriever._();
 
   static const offTopicReply =
-      'Այս հարցը Աստվածաշնչի հետ կապ չունի։ Ես պատասխանում եմ միայն Աստվածաշնչյան հարցերին։';
+      'Այս հարցը Աստվածաշնչի հետ կապ չունի։ Ես պատասխանում եմ հոգևոր և Աստվածաշնչյան հարցերին։ Եթե ուզում եք, հարցրեք հավատի, կյանքի կամ Աստվածաշնչի մասին։';
   static const imagesOffReply =
       'Նկարների ֆունկցիան հիմա անջատված է։ Գրեք Աստվածաշնչյան հարց։';
+  static const greetingReply =
+      'Բարև։ Ես ԱԲ եմ՝ այս հավելվածի հոգևոր օգնականը։ Ուրախ եմ, որ գրեցիք։ Ինչո՞վ կարող եմ օգնել Աստվածաշնչի, հավատի կամ կյանքի հարցում։';
 
   static const _bibleVocab = [
     'աստվածաշունչ',
@@ -807,7 +809,7 @@ class BibleContextRetriever {
         .trim();
   }
 
-  List<BiblePassage> passagesForQuestion(String question, {int limit = 6}) {
+  List<BiblePassage> passagesForQuestion(String question, {int limit = 10}) {
     ensureReady();
     if (wantsIdentity(question)) {
       return _passagesFromPeople(question, limit: 4);
@@ -1022,6 +1024,40 @@ class BibleContextRetriever {
         .trim();
   }
 
+  bool looksLikeGreeting(String question) {
+    final t = question
+        .toLowerCase()
+        .trim()
+        .replaceAll(RegExp(r'[.!?՝՞,։]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    if (t.isEmpty || t.length > 48) return false;
+    const greetings = [
+      'բարև',
+      'բարեւ',
+      'բարև ձեզ',
+      'բարեւ ձեզ',
+      'բարև ջան',
+      'ողջույն',
+      'ողջոյն',
+      'բարի լույս',
+      'բարի լոյս',
+      'բարի երեկո',
+      'բարի երեկոյ',
+      'բարի գիշեր',
+      'հելո',
+      'հելլո',
+      'hello',
+      'hi',
+      'hey',
+      'привет',
+      'ինչպես ես',
+      'ինչպես եք',
+      'լավ ես',
+    ];
+    return greetings.any((g) => t == g || t.startsWith('$g '));
+  }
+
   bool looksLikeImageAsk(String question) {
     return _looksLikeImageAsk(question.toLowerCase());
   }
@@ -1066,13 +1102,18 @@ class BibleContextRetriever {
   }
 
   bool shouldAttachPassages(String question, {required bool followUp}) {
+    if (looksLikeGreeting(question)) return false;
     if (quoteExplicitReferences(question).matched) return true;
     if (wantsVerseOnly(question) || wantsLocateVerse(question)) return true;
     if (wantsMoreVerses(question) || looksLikeVerseFollowUp(question)) {
       return true;
     }
+    if (wantsRestrictedSources(question) || wantsIdentity(question)) {
+      return true;
+    }
+    if (isBibleRelated(question)) return true;
     if (followUp) return false;
-    return false;
+    return true;
   }
 
   bool looksLikeFollowUp(

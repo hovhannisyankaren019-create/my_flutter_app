@@ -46,6 +46,11 @@ class SpiritualAiService {
         : trimmed;
     final retriever = BibleContextRetriever.instance;
     await retriever.ensureReady();
+    if (retriever.looksLikeGreeting(trimmed)) {
+      return const SpiritualAiReply(
+        text: BibleContextRetriever.greetingReply,
+      );
+    }
     if (retriever.looksLikeImageAsk(trimmed) &&
         !retriever.isBibleRelated(trimmed)) {
       return const SpiritualAiReply(
@@ -92,13 +97,16 @@ class SpiritualAiService {
           '$askMessage\n\n(Համակարգ. բացատրիր հայերենով և պարտադիր ավելացրու Սթրոնգի բառարանի բացատրությունը. Սթրոնգի համարը, եբրայերեն է թե հունարեն, հայերեն արտասանությունը, իմաստները և Աստվածաշնչյան գործածությունը։ Անգլերեն բառ մի գրիր։ Կարճ մի գրիր։)';
     } else if (retriever.wantsRestrictedSources(trimmed)) {
       askMessage =
-          '$askMessage\n\n(Համակարգ. նախ հստակ պատասխանիր հարցին հայերենով, հետո լիարժեք բացատրիր Աստվածաշնչով։ Աղբյուրների անունները գրիր միայն հայերենով։ Թիվ մի հորինիր։ Օտար բառ մի գրիր։ Կարճ մի գրիր։)';
+          '$askMessage\n\n(Համակարգ. նախ հստակ պատասխանիր հայերենով, հետո տուր շատ տեղեկություն տարբեր հոգևոր աղբյուրներից՝ Աստվածաշունչ, Սթրոնգ, Դալլասի մեկնություն, Քիներ, Սուրբ Հայրեր, Մեթյու Հենրի, Քալվին, Սփերջըն և այլ մեկնիչներ։ Աղբյուրների անունները գրիր հայերենով։ Թիվ ու մեջբերում մի հորինիր։ Կարճ մի գրիր։)';
     } else if (retriever.wantsIdentity(trimmed)) {
       askMessage =
           '$askMessage\n\n(Համակարգ. սա անձի հարց է։ Առաջին նախադասությամբ հստակ ասա՝ Աստվածաշնչում նա ով է։ Մի շփոթիր համանուն կամ պատահական համարի հետ։ Հովիվ ասելիս նկատի առ բարի հովիվը՝ Տերն ու Հիսուսը։ Եթե մի անունով մի քանի հայտնի անձ կա, կարճ նշիր գլխավորներին։ Համարներ մի հորինիր։)';
+    } else if (retriever.looksLikeGreeting(trimmed)) {
+      askMessage =
+          '$trimmed\n\n(Համակարգ. սա բարև է։ Ջերմ բարևիր հայերենով, ասա որ ԱԲ ես, և հարցրու ինչով օգնել։ Մի ասա թե կապ չունի։)';
     } else {
       askMessage =
-          '$askMessage\n\n(Համակարգ. պատասխանիր միայն հայերենով և միայն Աստվածաշնչով՝ լիարժեք, ջերմ ու պարզ։ Եթե բառի իմաստ է, ավելացրու Սթրոնգի բառարանը հայերենով։ Օտար բառ մի գրիր։ Եթե Աստվածաշունչը խոսում է այս մասին, պատասխանիր և մի ասա թե կապ չունի։ Միայն ակնհայտ աշխարհիկ բաներին գրիր միայն սա, առանց համարի և առանց թվի. Այս հարցը Աստվածաշնչի հետ կապ չունի։ Ես պատասխանում եմ միայն Աստվածաշնչյան հարցերին։)';
+          '$askMessage\n\n(Համակարգ. պատասխանիր հայերենով, ջերմ, լիարժեք ու հարուստ։ Օգտվիր տարբեր հոգևոր աղբյուրներից՝ Աստվածաշունչ, Սթրոնգ, մեկնություններ, Սուրբ Հայրեր և հայտնի մեկնիչներ։ Կարճ մի գրիր։ Եթե բարևում են, բարևիր։ Միայն ակնհայտ աշխարհիկ տեխնիկա, սպորտ, խոհանոց, խաղեր գրելու դեպքում կարճ ասա, որ դու հոգևոր օգնական ես։)';
     }
 
     final headers = <String, String>{
@@ -120,7 +128,7 @@ class SpiritualAiService {
             'passages': passages.map((p) => p.toJson()).toList(),
           }),
         )
-        .timeout(const Duration(seconds: 90));
+        .timeout(const Duration(seconds: 120));
 
     if (response.statusCode == 429) {
       throw SpiritualAiException(
@@ -149,16 +157,6 @@ class SpiritualAiService {
     var text = decoded['reply']?.toString().trim() ?? '';
     if (text.isEmpty) {
       throw SpiritualAiException('Պատասխանը դատարկ էր։');
-    }
-    final lower = text.toLowerCase();
-    final refusal = lower.contains('չեմ կարող') ||
-        lower.contains('չեմ պատասխան') ||
-        lower.contains('կապ չունի') ||
-        lower.contains('միայն աստվածաշնչյան');
-    if (refusal) {
-      return const SpiritualAiReply(
-        text: BibleContextRetriever.offTopicReply,
-      );
     }
     return SpiritualAiReply(text: text, passages: passages);
   }

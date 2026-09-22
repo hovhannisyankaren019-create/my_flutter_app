@@ -152,7 +152,7 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
       var askText = text;
       if (wantsHistory) {
         askText =
-            '$text\n\n(Համակարգ. տուր լիարժեք պատմական և մեկնաբանական պատասխան ըստ թույլատրելի աղբյուրների, առանձին պարբերություններով։ Կարճ մի գրիր։)';
+            '$text\n\n(Համակարգ. տուր լիարժեք հոգևոր պատասխան տարբեր աղբյուրներով՝ Աստվածաշունչ, մեկնություններ, Սուրբ Հայրեր և այլ հոգևոր գրքեր։ Կարճ մի գրիր։)';
       }
 
       final reply = await _service.ask(
