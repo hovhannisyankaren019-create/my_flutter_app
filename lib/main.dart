@@ -8,6 +8,7 @@ import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:share_plus/share_plus.dart';
 import 'dart:math' as math;
 
 import 'firebase_options.dart';
@@ -323,13 +324,70 @@ _BibleUiStrings bibleUiStrings(String edition) {
   return _armenianUiStrings;
 }
 
+String bibleSelectedCountLabel(String edition, int count) {
+  if (edition == _bibleEditionSynod) return '$count выбрано';
+  if (edition == _bibleEditionKjv) {
+    return count == 1 ? '1 selected' : '$count selected';
+  }
+  return '$count ընտրված';
+}
+
 PreferredSizeWidget _bibleReaderAppBar({
   required bool isDark,
   required String title,
   required VoidCallback onBack,
   required VoidCallback onFontSize,
   VoidCallback? onTitleTap,
+  String edition = _bibleEditionArarat,
+  int selectedCount = 0,
+  VoidCallback? onCancel,
+  VoidCallback? onShare,
 }) {
+  if (selectedCount > 0) {
+    final color = AppColors.text(isDark);
+    final strings = bibleUiStrings(edition);
+    return AppBar(
+      backgroundColor: AppColors.bg(isDark),
+      foregroundColor: color,
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      leadingWidth: 118,
+      leading: TextButton(
+        onPressed: onCancel ?? onBack,
+        style: TextButton.styleFrom(
+          foregroundColor: color,
+          padding: const EdgeInsets.only(left: 8),
+          alignment: Alignment.centerLeft,
+        ),
+        child: Text(
+          strings.cancel,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ),
+      title: Text(
+        bibleSelectedCountLabel(edition, selectedCount),
+        style: TextStyle(
+          fontSize: 17,
+          fontWeight: FontWeight.w600,
+          color: color,
+        ),
+      ),
+      centerTitle: true,
+      actions: [
+        IconButton(
+          onPressed: onShare,
+          tooltip: 'Share',
+          icon: Icon(Icons.ios_share, color: color),
+        ),
+      ],
+    );
+  }
+
   return AppBar(
     backgroundColor: AppColors.bg(isDark),
     foregroundColor: AppColors.text(isDark),
@@ -524,12 +582,17 @@ void syncVerseActionNav(
 
 class VerseActionNav extends ChangeNotifier {
   bool active = false;
+  bool openChaptersOnNextBibleTab = false;
   String edition = _bibleEditionArarat;
   VoidCallback? onAi;
   VoidCallback? onCompare;
   VoidCallback? onCopy;
   VoidCallback? onSave;
   VoidCallback? onCancel;
+
+  void preferChaptersOnBibleTab() {
+    openChaptersOnNextBibleTab = true;
+  }
 
   void show({
     required String edition,
@@ -591,11 +654,10 @@ Widget _bibleReaderVerseActionBar({
   final strings = bibleUiStrings(edition);
   final color = AppColors.text(isDark);
   final items = <({IconData icon, String label, VoidCallback onTap})>[
-    (icon: Icons.close, label: strings.cancel, onTap: onCancel),
     (icon: Icons.content_copy, label: strings.copy, onTap: onCopy),
     (icon: Icons.bookmark_add_outlined, label: strings.save, onTap: onSave),
-    (icon: Icons.auto_awesome, label: strings.ai, onTap: onAi),
     (icon: Icons.menu_book_outlined, label: strings.compare, onTap: onCompare),
+    (icon: Icons.auto_awesome, label: strings.ai, onTap: onAi),
   ];
 
   return Material(
@@ -1092,6 +1154,12 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _onTabSelected(int index) {
+    if (index == 1 && _verseActions.openChaptersOnNextBibleTab) {
+      _verseActions.openChaptersOnNextBibleTab = false;
+      _verseActions.hide();
+      _openBibleEdition(_lastBibleEdition);
+      return;
+    }
     if (index == _tabIndex) {
       _navKeys[index].currentState?.popUntil((route) => route.isFirst);
       if (index == 2) {
@@ -2674,25 +2742,7 @@ class ChaptersScreen extends StatefulWidget {
 }
 
 class _ChaptersScreenState extends State<ChaptersScreen> {
-  int? _lastChapter;
-
-  String get _lastChapterKey =>
-      bibleLastChapterPrefsKey(widget.bookName, widget.edition);
-
-  @override
-  void initState() {
-    super.initState();
-    _loadLastChapter();
-  }
-
-  Future<void> _loadLastChapter() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (!mounted) return;
-    setState(() => _lastChapter = prefs.getInt(_lastChapterKey));
-  }
-
   Future<void> _openChapter(int chapterNumber) async {
-    setState(() => _lastChapter = chapterNumber);
     await saveBibleLastChapter(
       bookName: widget.bookName,
       chapterNumber: chapterNumber,
@@ -2715,10 +2765,6 @@ class _ChaptersScreenState extends State<ChaptersScreen> {
         ),
       ),
     );
-    if (!mounted) return;
-    final prefs = await SharedPreferences.getInstance();
-    if (!mounted) return;
-    setState(() => _lastChapter = prefs.getInt(_lastChapterKey) ?? chapterNumber);
   }
 
   @override
@@ -2766,6 +2812,8 @@ class _ChaptersScreenState extends State<ChaptersScreen> {
         builder: (context, constraints) {
           final padding = constraints.maxWidth < 360 ? 14.0 : 18.0;
           const spacing = 10.0;
+          final tileColor =
+              isDark ? AppColors.darkForest : const Color(0xFFF7F5EE);
           return Padding(
             padding: EdgeInsets.fromLTRB(padding, 8, padding, padding),
             child: GridView.builder(
@@ -2778,13 +2826,6 @@ class _ChaptersScreenState extends State<ChaptersScreen> {
               ),
               itemBuilder: (context, index) {
                 final chapterNumber = index + 1;
-                final selected = _lastChapter == chapterNumber;
-                final tileColor = selected
-                    ? (isDark ? const Color(0xFF9AA090) : AppColors.forest)
-                    : (isDark ? AppColors.darkForest : const Color(0xFFF7F5EE));
-                final textColor = selected
-                    ? (isDark ? AppColors.darkForest : AppColors.cream)
-                    : AppColors.text(isDark);
                 return Material(
                   color: tileColor,
                   borderRadius: BorderRadius.circular(18),
@@ -2797,7 +2838,7 @@ class _ChaptersScreenState extends State<ChaptersScreen> {
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
-                          color: textColor,
+                          color: AppColors.text(isDark),
                         ),
                       ),
                     ),
@@ -3711,6 +3752,22 @@ class VerseHelper {
         ),
       );
     }
+  }
+
+  static Future<void> shareVerses(
+    String bookName,
+    int chapterNumber,
+    Map<int, String> verses, {
+    String edition = _bibleEditionArarat,
+  }) async {
+    if (verses.isEmpty) return;
+    final ref = selectionReference(
+      bookName,
+      chapterNumber,
+      verses,
+      edition: edition,
+    );
+    await Share.share('$ref\n${selectionText(verses)}');
   }
 
   static Future<void> saveVerse(
@@ -4950,19 +5007,23 @@ class _ChapterTextScreenState extends State<ChapterTextScreen> {
       _selectedVerses,
       edition: widget.edition,
     );
-    VerseActionNavScope.maybeOf(context)?.hide();
-    await _openSpiritualAi(
-      context,
-      'Բացատրիր $ref\n\n«${VerseHelper.selectionText(_selectedVerses)}»',
-    );
+    final question =
+        'Բացատրիր $ref\n\n«${VerseHelper.selectionText(_selectedVerses)}»';
+    final nav = VerseActionNavScope.maybeOf(context);
+    nav?.preferChaptersOnBibleTab();
+    nav?.hide();
+    _clearSelections();
+    await _openSpiritualAi(context, question);
     if (!mounted) return;
-    _publishVerseActions();
+    _clearSelections();
   }
 
   Future<void> _openSelectedCompare() async {
     if (_selectedVerses.isEmpty) return;
     final verseNumber = (_selectedVerses.keys.toList()..sort()).first;
+    final verseText = _selectedVerses[verseNumber] ?? '';
     VerseActionNavScope.maybeOf(context)?.hide();
+    _clearSelections();
     await Navigator.push(
       context,
       MaterialPageRoute(
@@ -4970,25 +5031,36 @@ class _ChapterTextScreenState extends State<ChapterTextScreen> {
           bookName: widget.bookName,
           chapterNumber: widget.chapterNumber,
           verseNumber: verseNumber,
-          verseText: _selectedVerses[verseNumber] ?? '',
+          verseText: verseText,
           edition: widget.edition,
         ),
       ),
     );
     if (!mounted) return;
+    _clearSelections();
   }
 
   Future<void> _copySelectedVerses() async {
     if (_selectedVerses.isEmpty) return;
+    final verses = Map<int, String>.from(_selectedVerses);
+    _clearSelections();
     await VerseHelper.copyVerses(
       context,
+      widget.bookName,
+      widget.chapterNumber,
+      verses,
+      edition: widget.edition,
+    );
+  }
+
+  Future<void> _shareSelectedVerses() async {
+    if (_selectedVerses.isEmpty) return;
+    await VerseHelper.shareVerses(
       widget.bookName,
       widget.chapterNumber,
       Map<int, String>.from(_selectedVerses),
       edition: widget.edition,
     );
-    if (!mounted) return;
-    _clearSelections();
   }
 
   void _publishVerseActions() {
@@ -5050,6 +5122,10 @@ class _ChapterTextScreenState extends State<ChapterTextScreen> {
         isDark: isDark,
         title:
             '${bibleBookLabel(widget.bookName, widget.edition)} ${widget.chapterNumber}',
+        edition: widget.edition,
+        selectedCount: _selectedVerses.length,
+        onCancel: _clearSelections,
+        onShare: _shareSelectedVerses,
         onBack: () {
           ScaffoldMessenger.of(context).hideCurrentSnackBar();
           if (_selectedVerses.isNotEmpty) {
@@ -5075,7 +5151,23 @@ class _ChapterTextScreenState extends State<ChapterTextScreen> {
                 padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
                 child: SingleChildScrollView(
                   controller: _scrollController, // Ավելացրել եմ
-                  child: VerseHelper.buildClickableVerseText(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (_selectedVerses.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: Text(
+                            '${bibleBookLabel(widget.bookName, widget.edition)} ${widget.chapterNumber}',
+                            style: TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.w700,
+                              height: 1.15,
+                              color: AppColors.text(isDark),
+                            ),
+                          ),
+                        ),
+                      VerseHelper.buildClickableVerseText(
                     context,
                     widget.text,
                     widget.bookName,
@@ -5123,6 +5215,8 @@ class _ChapterTextScreenState extends State<ChapterTextScreen> {
                         wordKey,
                       );
                     },
+                  ),
+                    ],
                   ),
                 ),
               ),
@@ -5971,19 +6065,23 @@ class _ChapterTextScreenWithHighlightState
       _selectedVerses,
       edition: widget.edition,
     );
-    VerseActionNavScope.maybeOf(context)?.hide();
-    await _openSpiritualAi(
-      context,
-      'Բացատրիր $ref\n\n«${VerseHelper.selectionText(_selectedVerses)}»',
-    );
+    final question =
+        'Բացատրիր $ref\n\n«${VerseHelper.selectionText(_selectedVerses)}»';
+    final nav = VerseActionNavScope.maybeOf(context);
+    nav?.preferChaptersOnBibleTab();
+    nav?.hide();
+    _clearSelections();
+    await _openSpiritualAi(context, question);
     if (!mounted) return;
-    _publishVerseActions();
+    _clearSelections();
   }
 
   Future<void> _openSelectedCompare() async {
     if (_selectedVerses.isEmpty) return;
     final verseNumber = (_selectedVerses.keys.toList()..sort()).first;
+    final verseText = _selectedVerses[verseNumber] ?? '';
     VerseActionNavScope.maybeOf(context)?.hide();
+    _clearSelections();
     await Navigator.push(
       context,
       MaterialPageRoute(
@@ -5991,25 +6089,36 @@ class _ChapterTextScreenWithHighlightState
           bookName: widget.bookName,
           chapterNumber: widget.chapterNumber,
           verseNumber: verseNumber,
-          verseText: _selectedVerses[verseNumber] ?? '',
+          verseText: verseText,
           edition: widget.edition,
         ),
       ),
     );
     if (!mounted) return;
+    _clearSelections();
   }
 
   Future<void> _copySelectedVerses() async {
     if (_selectedVerses.isEmpty) return;
+    final verses = Map<int, String>.from(_selectedVerses);
+    _clearSelections();
     await VerseHelper.copyVerses(
       context,
+      widget.bookName,
+      widget.chapterNumber,
+      verses,
+      edition: widget.edition,
+    );
+  }
+
+  Future<void> _shareSelectedVerses() async {
+    if (_selectedVerses.isEmpty) return;
+    await VerseHelper.shareVerses(
       widget.bookName,
       widget.chapterNumber,
       Map<int, String>.from(_selectedVerses),
       edition: widget.edition,
     );
-    if (!mounted) return;
-    _clearSelections();
   }
 
   void _publishVerseActions() {
@@ -6081,6 +6190,10 @@ class _ChapterTextScreenWithHighlightState
         isDark: isDark,
         title:
             '${bibleBookLabel(widget.bookName, widget.edition)} ${widget.chapterNumber}',
+        edition: widget.edition,
+        selectedCount: _selectedVerses.length,
+        onCancel: _clearSelections,
+        onShare: _shareSelectedVerses,
         onBack: () {
           if (_selectedVerses.isNotEmpty) {
             _clearSelections();
@@ -6105,7 +6218,23 @@ class _ChapterTextScreenWithHighlightState
                 padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
                 child: SingleChildScrollView(
                   controller: _scrollController,
-                  child: VerseHelper.buildClickableVerseText(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (_selectedVerses.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: Text(
+                            '${bibleBookLabel(widget.bookName, widget.edition)} ${widget.chapterNumber}',
+                            style: TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.w700,
+                              height: 1.15,
+                              color: AppColors.text(isDark),
+                            ),
+                          ),
+                        ),
+                      VerseHelper.buildClickableVerseText(
                     context,
                     text,
                     widget.bookName,
@@ -6150,6 +6279,8 @@ class _ChapterTextScreenWithHighlightState
                         wordKey,
                       );
                     },
+                  ),
+                    ],
                   ),
                 ),
               ),
