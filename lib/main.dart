@@ -27,6 +27,38 @@ const String _bibleEditionTbs = 'tbs';
 const String _bibleEditionKjv = 'kjv';
 const double _defaultReaderFontSize = 20;
 
+String bibleLastBookPrefsKey(String edition) => 'last_bible_book_$edition';
+
+String bibleLastChapterPrefsKey(String bookName, String edition) {
+  if (edition == _bibleEditionTbs) return 'last_chapter_tbs_$bookName';
+  if (edition == _bibleEditionSynod) return 'last_chapter_synod_$bookName';
+  if (edition == _bibleEditionKjv) return 'last_chapter_kjv_$bookName';
+  return 'last_chapter_$bookName';
+}
+
+Future<void> saveBibleLastChapter({
+  required String bookName,
+  required int chapterNumber,
+  required String edition,
+}) async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setString(bibleLastBookPrefsKey(edition), bookName);
+  await prefs.setInt(
+    bibleLastChapterPrefsKey(bookName, edition),
+    chapterNumber,
+  );
+}
+
+Future<void> ensureBibleEditionLoaded(String edition) async {
+  if (edition == _bibleEditionTbs) {
+    await TbsBible.ensureLoaded();
+  } else if (edition == _bibleEditionSynod) {
+    await RuSynodalBible.ensureLoaded();
+  } else if (edition == _bibleEditionKjv) {
+    await EnKjvBible.ensureLoaded();
+  }
+}
+
 class AppColors {
   static const lightBg = Color(0xFFF0EEE6);
   static const lightText = Color(0xFF3D463F);
@@ -67,14 +99,20 @@ class AppColors {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    ).timeout(const Duration(seconds: 6));
+  } catch (e) {
+    debugPrint('Firebase init skipped: $e');
+  }
 
-  // ⬇ ՆՈՐ. Պիտի լինի Firebase.initializeApp-ից հետո, բայց initialize()-ից առաջ
-  FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
-
-  await FirebaseMessagingService.initialize();
+  if (Firebase.apps.isNotEmpty) {
+    try {
+      FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+    } catch (_) {}
+    unawaited(FirebaseMessagingService.initialize());
+  }
 
   runApp(const BibleApp());
 }
@@ -204,6 +242,7 @@ class _BibleUiStrings {
   final String previous;
   final String next;
   final String chapterNav;
+  final String cancel;
 
   const _BibleUiStrings({
     required this.compare,
@@ -220,6 +259,7 @@ class _BibleUiStrings {
     required this.previous,
     required this.next,
     required this.chapterNav,
+    required this.cancel,
   });
 }
 
@@ -238,6 +278,7 @@ const _armenianUiStrings = _BibleUiStrings(
   previous: 'Նախորդ',
   next: 'Հաջորդ',
   chapterNav: 'Գլուխ',
+  cancel: 'Չեղարկել',
 );
 
 const _russianUiStrings = _BibleUiStrings(
@@ -255,6 +296,7 @@ const _russianUiStrings = _BibleUiStrings(
   previous: 'Назад',
   next: 'Далее',
   chapterNav: 'Глава',
+  cancel: 'Отмена',
 );
 
 const _englishUiStrings = _BibleUiStrings(
@@ -272,6 +314,7 @@ const _englishUiStrings = _BibleUiStrings(
   previous: 'Previous',
   next: 'Next',
   chapterNav: 'Chapter',
+  cancel: 'Cancel',
 );
 
 _BibleUiStrings bibleUiStrings(String edition) {
@@ -285,6 +328,7 @@ PreferredSizeWidget _bibleReaderAppBar({
   required String title,
   required VoidCallback onBack,
   required VoidCallback onFontSize,
+  VoidCallback? onTitleTap,
 }) {
   return AppBar(
     backgroundColor: AppColors.bg(isDark),
@@ -295,15 +339,18 @@ PreferredSizeWidget _bibleReaderAppBar({
       icon: const Icon(Icons.chevron_left, size: 34),
       onPressed: onBack,
     ),
-    title: Text(
-      title,
-      maxLines: 2,
-      overflow: TextOverflow.ellipsis,
-      style: TextStyle(
-        fontSize: 24,
-        fontWeight: FontWeight.w700,
-        height: 1.15,
-        color: AppColors.text(isDark),
+    title: GestureDetector(
+      onTap: onTitleTap,
+      child: Text(
+        title,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: 24,
+          fontWeight: FontWeight.w700,
+          height: 1.15,
+          color: AppColors.text(isDark),
+        ),
       ),
     ),
     centerTitle: false,
@@ -444,6 +491,171 @@ Widget _bibleReaderBottomNav({
             ),
           ],
         ),
+      ),
+    ),
+  );
+}
+
+void syncVerseActionNav(
+  BuildContext context, {
+  required String edition,
+  required Map<int, String> selected,
+  required VoidCallback onAi,
+  required VoidCallback onCompare,
+  required VoidCallback onCopy,
+  required VoidCallback onSave,
+  required VoidCallback onCancel,
+}) {
+  final nav = VerseActionNavScope.maybeOf(context);
+  if (nav == null) return;
+  if (selected.isEmpty) {
+    nav.hide();
+  } else {
+    nav.show(
+      edition: edition,
+      onAi: onAi,
+      onCompare: onCompare,
+      onCopy: onCopy,
+      onSave: onSave,
+      onCancel: onCancel,
+    );
+  }
+}
+
+class VerseActionNav extends ChangeNotifier {
+  bool active = false;
+  String edition = _bibleEditionArarat;
+  VoidCallback? onAi;
+  VoidCallback? onCompare;
+  VoidCallback? onCopy;
+  VoidCallback? onSave;
+  VoidCallback? onCancel;
+
+  void show({
+    required String edition,
+    required VoidCallback onAi,
+    required VoidCallback onCompare,
+    required VoidCallback onCopy,
+    required VoidCallback onSave,
+    required VoidCallback onCancel,
+  }) {
+    this.edition = edition;
+    this.onAi = onAi;
+    this.onCompare = onCompare;
+    this.onCopy = onCopy;
+    this.onSave = onSave;
+    this.onCancel = onCancel;
+    active = true;
+    notifyListeners();
+  }
+
+  void hide() {
+    if (!active) return;
+    active = false;
+    onAi = null;
+    onCompare = null;
+    onCopy = onSave = onCancel = null;
+    notifyListeners();
+  }
+}
+
+class VerseActionNavScope extends InheritedWidget {
+  final VerseActionNav nav;
+
+  const VerseActionNavScope({
+    required this.nav,
+    required super.child,
+  });
+
+  static VerseActionNav? maybeOf(BuildContext context) {
+    return context
+        .getInheritedWidgetOfExactType<VerseActionNavScope>()
+        ?.nav;
+  }
+
+  @override
+  bool updateShouldNotify(VerseActionNavScope oldWidget) {
+    return nav != oldWidget.nav;
+  }
+}
+
+Widget _bibleReaderVerseActionBar({
+  required bool isDark,
+  required String edition,
+  required VoidCallback onAi,
+  required VoidCallback onCompare,
+  required VoidCallback onCopy,
+  required VoidCallback onSave,
+  required VoidCallback onCancel,
+}) {
+  final strings = bibleUiStrings(edition);
+  final color = AppColors.text(isDark);
+  final items = <({IconData icon, String label, VoidCallback onTap})>[
+    (icon: Icons.close, label: strings.cancel, onTap: onCancel),
+    (icon: Icons.content_copy, label: strings.copy, onTap: onCopy),
+    (icon: Icons.bookmark_add_outlined, label: strings.save, onTap: onSave),
+    (icon: Icons.auto_awesome, label: strings.ai, onTap: onAi),
+    (icon: Icons.menu_book_outlined, label: strings.compare, onTap: onCompare),
+  ];
+
+  return Material(
+    color: AppColors.bar(isDark),
+    child: SafeArea(
+      top: false,
+      child: Container(
+        height: 58,
+        decoration: BoxDecoration(
+          border: Border(
+            top: BorderSide(
+              color: isDark ? const Color(0xFF6A7268) : const Color(0xFFD4CFC2),
+              width: 0.8,
+            ),
+          ),
+        ),
+        child: Row(
+          children: [
+            for (final item in items)
+              Expanded(
+                child: InkWell(
+                  onTap: item.onTap,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(item.icon, size: 22, color: color),
+                      const SizedBox(height: 4),
+                      Text(
+                        item.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 10,
+                          height: 1.1,
+                          fontWeight: FontWeight.w500,
+                          color: color,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+Future<void> _openSpiritualAi(BuildContext context, String question) {
+  var guest = true;
+  try {
+    guest = FirebaseAuth.instance.currentUser == null;
+  } catch (_) {}
+  return Navigator.push<void>(
+    context,
+    MaterialPageRoute(
+      builder: (_) => SpiritualAiScreen(
+        isGuest: guest,
+        initialQuestion: question,
       ),
     ),
   );
@@ -761,6 +973,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final _savedVersesKey = GlobalKey<_SavedVersesScreenState>();
   final _searchKey = GlobalKey<_SearchScreenState>();
   late final PageController _pageController;
+  final VerseActionNav _verseActions = VerseActionNav();
   final List<GlobalKey<NavigatorState>> _navKeys =
       List<GlobalKey<NavigatorState>>.generate(
     5,
@@ -786,17 +999,89 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  bool _restoreLastChapterOnBibleTab = false;
+
   Future<void> _openBibleEdition(String edition) async {
-    _navKeys[1].currentState?.popUntil((route) => route.isFirst);
+    _restoreLastChapterOnBibleTab = false;
     setState(() => _lastBibleEdition = edition);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_lastBibleEditionPrefsKey, edition);
     if (!mounted) return;
-    _onTabSelected(1);
+    final nav = _navKeys[1].currentState;
+    nav?.popUntil((route) => route.isFirst);
+    final book = prefs.getString(bibleLastBookPrefsKey(edition));
+    if (book != null && book.isNotEmpty) {
+      try {
+        await ensureBibleEditionLoaded(edition);
+      } catch (_) {}
+      if (!mounted) return;
+      final chapters = bibleChapterCount(book, edition);
+      nav?.push(
+        MaterialPageRoute<void>(
+          builder: (_) => ChaptersScreen(
+            bookName: book,
+            chapters: chapters,
+            edition: edition,
+          ),
+        ),
+      );
+    }
+    if (!mounted) return;
+    if (_tabIndex != 1) {
+      _pageController.animateToPage(
+        1,
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
+  Future<void> _restoreLastBibleReading() async {
+    final nav = _navKeys[1].currentState;
+    if (nav == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    final edition = _lastBibleEdition;
+    final book = prefs.getString(bibleLastBookPrefsKey(edition));
+    if (book == null || book.isEmpty) {
+      nav.popUntil((route) => route.isFirst);
+      return;
+    }
+    try {
+      await ensureBibleEditionLoaded(edition);
+    } catch (_) {}
+    if (!mounted) return;
+    final chapters = bibleChapterCount(book, edition);
+    final chapter = prefs.getInt(bibleLastChapterPrefsKey(book, edition));
+    if (chapter == null || chapter < 1 || chapter > chapters) {
+      nav.popUntil((route) => route.isFirst);
+      return;
+    }
+    final text = bibleChapterText(book, chapter, edition);
+    nav.popUntil((route) => route.isFirst);
+    nav.push(
+      MaterialPageRoute<void>(
+        builder: (_) => ChaptersScreen(
+          bookName: book,
+          chapters: chapters,
+          edition: edition,
+        ),
+      ),
+    );
+    nav.push(
+      MaterialPageRoute<void>(
+        builder: (_) => ChapterTextScreen(
+          bookName: book,
+          chapterNumber: chapter,
+          text: text,
+          edition: edition,
+        ),
+      ),
+    );
   }
 
   @override
   void dispose() {
+    _verseActions.dispose();
     _pageController.dispose();
     super.dispose();
   }
@@ -817,6 +1102,9 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_tabIndex == 2) {
       _resetSearchTab();
     }
+    if (index == 1) {
+      _restoreLastChapterOnBibleTab = true;
+    }
     _pageController.animateToPage(
       index,
       duration: const Duration(milliseconds: 280),
@@ -832,6 +1120,10 @@ class _HomeScreenState extends State<HomeScreen> {
       _resetSearchTab();
       if (index == 3) {
         _savedVersesKey.currentState?.reload();
+      }
+      if (index == 1 && _restoreLastChapterOnBibleTab) {
+        _restoreLastChapterOnBibleTab = false;
+        _restoreLastBibleReading();
       }
     });
   }
@@ -868,10 +1160,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
+    return VerseActionNavScope(
+      nav: _verseActions,
+      child: PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
+        if (_verseActions.active) {
+          _verseActions.hide();
+        }
         if (_popInnerRoute()) return;
         if (_tabIndex != 0) {
           _onTabSelected(0);
@@ -936,11 +1233,33 @@ class _HomeScreenState extends State<HomeScreen> {
             }
           },
         ),
-        bottomNavigationBar: _MainBottomBar(
-          currentIndex: _tabIndex,
-          onTap: _onTabSelected,
+        bottomNavigationBar: ListenableBuilder(
+          listenable: _verseActions,
+          builder: (context, _) {
+            if (_verseActions.active &&
+                _verseActions.onAi != null &&
+                _verseActions.onCompare != null &&
+                _verseActions.onCopy != null &&
+                _verseActions.onSave != null &&
+                _verseActions.onCancel != null) {
+              return _bibleReaderVerseActionBar(
+                isDark: widget.isDark,
+                edition: _verseActions.edition,
+                onAi: _verseActions.onAi!,
+                onCompare: _verseActions.onCompare!,
+                onCopy: _verseActions.onCopy!,
+                onSave: _verseActions.onSave!,
+                onCancel: _verseActions.onCancel!,
+              );
+            }
+            return _MainBottomBar(
+              currentIndex: _tabIndex,
+              onTap: _onTabSelected,
+            );
+          },
         ),
       ),
+    ),
     );
   }
 }
@@ -978,6 +1297,9 @@ class _AiTabState extends State<_AiTab> {
 
   Stream<User?> _authStream() {
     try {
+      if (Firebase.apps.isEmpty) {
+        return Stream<User?>.value(null);
+      }
       return FirebaseAuth.instance.authStateChanges();
     } catch (_) {
       return Stream<User?>.value(null);
@@ -1212,64 +1534,100 @@ class _HomeTab extends StatelessWidget {
           const SizedBox(width: 16),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
-        children: [
-          VerseOfDayHomeCard(
-            isDark: isDark,
-            onOpen: (text, reference, edition) =>
-                _openHomeVerseOfDay(context, text, reference, edition),
-          ),
-          const SizedBox(height: 16),
-          Padding(
-            padding: const EdgeInsets.only(left: 4, bottom: 12),
-            child: Text(
-              'Աստվածաշնչի թարգմանություն',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: AppColors.text(isDark),
-              ),
-            ),
-          ),
-          Row(
-            children: [
-              _HomeEditionCard(
-                title: 'Արարատ',
-                subtitle: 'Աստվածաշունչ',
-                color: isDark ? AppColors.araratCardDark : AppColors.araratCard,
-                onTap: onOpenArarat,
-              ),
-              const SizedBox(width: 12),
-              _HomeEditionCard(
-                title: 'TBS',
-                subtitle: 'Աստվածաշունչ',
-                color: isDark ? AppColors.tbsCardDark : AppColors.tbsCard,
-                onTap: onOpenTbs,
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              _HomeEditionCard(
-                title: 'Библия',
-                subtitle: 'Синодальный перевод',
-                localeTag: 'RU',
-                color: isDark ? AppColors.synodCardDark : AppColors.synodCard,
-                onTap: onOpenSynod,
-              ),
-              const SizedBox(width: 12),
-              _HomeEditionCard(
-                title: 'Bible',
-                subtitle: 'King James',
-                localeTag: 'EN',
-                color: isDark ? AppColors.kjvCardDark : AppColors.kjvCard,
-                onTap: onOpenKjv,
-              ),
-            ],
-          ),
-        ],
+      body: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final verseMax = (constraints.maxHeight * 0.42).clamp(160.0, 280.0);
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: verseMax),
+                  child: SingleChildScrollView(
+                    child: VerseOfDayHomeCard(
+                      isDark: isDark,
+                      onOpen: (text, reference, edition) =>
+                          _openHomeVerseOfDay(
+                        context,
+                        text,
+                        reference,
+                        edition,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Padding(
+                  padding: const EdgeInsets.only(left: 4, bottom: 12),
+                  child: Text(
+                    'Ընտրեք Աստվածաշունչ',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.text(isDark),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: Column(
+                    children: [
+                      Expanded(
+                        child: Row(
+                          children: [
+                            _HomeEditionCard(
+                              title: 'Արարատ',
+                              subtitle: 'Աստվածաշունչ',
+                              color: isDark
+                                  ? AppColors.araratCardDark
+                                  : AppColors.araratCard,
+                              onTap: onOpenArarat,
+                            ),
+                            const SizedBox(width: 12),
+                            _HomeEditionCard(
+                              title: 'TBS',
+                              subtitle: 'Աստվածաշունչ',
+                              color: isDark
+                                  ? AppColors.tbsCardDark
+                                  : AppColors.tbsCard,
+                              onTap: onOpenTbs,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Expanded(
+                        child: Row(
+                          children: [
+                            _HomeEditionCard(
+                              title: 'Библия',
+                              subtitle: 'Синодальный перевод',
+                              localeTag: 'RU',
+                              color: isDark
+                                  ? AppColors.synodCardDark
+                                  : AppColors.synodCard,
+                              onTap: onOpenSynod,
+                            ),
+                            const SizedBox(width: 12),
+                            _HomeEditionCard(
+                              title: 'Bible',
+                              subtitle: 'King James',
+                              localeTag: 'EN',
+                              color: isDark
+                                  ? AppColors.kjvCardDark
+                                  : AppColors.kjvCard,
+                              onTap: onOpenKjv,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
@@ -1367,86 +1725,81 @@ class _HomeEditionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Expanded(
-      child: AspectRatio(
-        aspectRatio: 1,
-        child: Material(
-          color: color,
-          borderRadius: BorderRadius.circular(26),
-          child: InkWell(
-            onTap: onTap,
-            borderRadius: BorderRadius.circular(26),
+      child: Material(
+        color: color,
+        borderRadius: BorderRadius.circular(22),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(22),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final w = constraints.maxWidth;
-                final pad = (w * 0.09).clamp(10.0, 16.0);
-                final iconSize = (w * 0.12).clamp(18.0, 22.0);
-                final titleSize = (w * 0.11).clamp(15.0, 20.0);
-                final subSize = (w * 0.078).clamp(11.0, 14.0);
-                final tagSize = (w * 0.065).clamp(10.0, 12.0);
-                return Padding(
-                  padding: EdgeInsets.fromLTRB(pad, pad, pad - 2, pad - 2),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.menu_book_outlined,
-                            color: AppColors.cream,
-                            size: iconSize,
-                          ),
-                          const Spacer(),
-                          Icon(
-                            Icons.chevron_right,
-                            color: AppColors.cream,
-                            size: iconSize,
-                          ),
-                        ],
-                      ),
-                      const Spacer(),
-                      FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          title,
-                          maxLines: 1,
-                          style: TextStyle(
-                            color: AppColors.cream,
-                            fontSize: titleSize,
-                            fontWeight: FontWeight.w700,
-                            height: 1.1,
-                          ),
+                final h = constraints.maxHeight;
+                final titleSize = (h * 0.18).clamp(15.0, 20.0);
+                final subSize = (h * 0.14).clamp(11.0, 14.0);
+                final iconSize = (h * 0.2).clamp(16.0, 22.0);
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.menu_book_outlined,
+                          color: AppColors.cream,
+                          size: iconSize,
                         ),
-                      ),
-                      SizedBox(height: w * 0.02),
-                      FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          subtitle.replaceAll('\n', ' '),
-                          maxLines: 1,
-                          style: TextStyle(
-                            color: AppColors.cream.withValues(alpha: 0.92),
-                            fontSize: subSize,
-                            fontWeight: FontWeight.w500,
-                            height: 1.1,
-                          ),
-                        ),
-                      ),
-                      if (localeTag != null) ...[
-                        SizedBox(height: w * 0.035),
-                        Text(
-                          localeTag!,
-                          style: TextStyle(
-                            color: AppColors.cream.withValues(alpha: 0.72),
-                            fontSize: tagSize,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 0.8,
-                          ),
+                        const Spacer(),
+                        Icon(
+                          Icons.chevron_right,
+                          color: AppColors.cream.withValues(alpha: 0.9),
+                          size: iconSize + 2,
                         ),
                       ],
+                    ),
+                    const Spacer(),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        title,
+                        maxLines: 1,
+                        style: TextStyle(
+                          color: AppColors.cream,
+                          fontSize: titleSize,
+                          fontWeight: FontWeight.w700,
+                          height: 1.1,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        subtitle.replaceAll('\n', ' '),
+                        maxLines: 1,
+                        style: TextStyle(
+                          color: AppColors.cream.withValues(alpha: 0.92),
+                          fontSize: subSize,
+                          fontWeight: FontWeight.w500,
+                          height: 1.1,
+                        ),
+                      ),
+                    ),
+                    if (localeTag != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        localeTag!,
+                        style: TextStyle(
+                          color: AppColors.cream.withValues(alpha: 0.7),
+                          fontSize: (subSize - 1).clamp(9.0, 11.0),
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.6,
+                        ),
+                      ),
                     ],
-                  ),
+                  ],
                 );
               },
             ),
@@ -2323,18 +2676,8 @@ class ChaptersScreen extends StatefulWidget {
 class _ChaptersScreenState extends State<ChaptersScreen> {
   int? _lastChapter;
 
-  String get _lastChapterKey {
-    if (widget.edition == _bibleEditionTbs) {
-      return 'last_chapter_tbs_${widget.bookName}';
-    }
-    if (widget.edition == _bibleEditionSynod) {
-      return 'last_chapter_synod_${widget.bookName}';
-    }
-    if (widget.edition == _bibleEditionKjv) {
-      return 'last_chapter_kjv_${widget.bookName}';
-    }
-    return 'last_chapter_${widget.bookName}';
-  }
+  String get _lastChapterKey =>
+      bibleLastChapterPrefsKey(widget.bookName, widget.edition);
 
   @override
   void initState() {
@@ -2350,15 +2693,18 @@ class _ChaptersScreenState extends State<ChaptersScreen> {
 
   Future<void> _openChapter(int chapterNumber) async {
     setState(() => _lastChapter = chapterNumber);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(_lastChapterKey, chapterNumber);
+    await saveBibleLastChapter(
+      bookName: widget.bookName,
+      chapterNumber: chapterNumber,
+      edition: widget.edition,
+    );
     if (!mounted) return;
     final text = bibleChapterText(
       widget.bookName,
       chapterNumber,
       widget.edition,
     );
-    Navigator.push(
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => ChapterTextScreen(
@@ -2369,6 +2715,10 @@ class _ChaptersScreenState extends State<ChaptersScreen> {
         ),
       ),
     );
+    if (!mounted) return;
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() => _lastChapter = prefs.getInt(_lastChapterKey) ?? chapterNumber);
   }
 
   @override
@@ -2739,28 +3089,48 @@ class VerseHelper {
       if (children.isEmpty) return;
       final borderColor =
           isDark ? const Color(0xFFD5D1C6) : const Color(0xFF6F776F);
+      Widget card = Container(
+        key: key,
+        width: double.infinity,
+        padding: highlight
+            ? const EdgeInsets.fromLTRB(14, 12, 14, 12)
+            : const EdgeInsets.fromLTRB(14, 6, 14, 6),
+        decoration: highlight
+            ? BoxDecoration(
+                border: Border.all(color: borderColor, width: 1.15),
+                borderRadius: BorderRadius.circular(16),
+              )
+            : null,
+        child: Text.rich(
+          TextSpan(
+            style: baseStyle,
+            children: List<InlineSpan>.from(children),
+          ),
+        ),
+      );
+      if (verseNumber != null && verseBody != null) {
+        card = GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () {
+            if (enableMultiSelect) {
+              onVerseSelectToggle?.call(verseNumber, verseBody);
+            } else if (onVerseAction != null) {
+              onVerseAction(
+                bookName,
+                chapterNumber,
+                verseNumber,
+                verseBody,
+                null,
+              );
+            }
+          },
+          child: card,
+        );
+      }
       blocks.add(
         Padding(
           padding: const EdgeInsets.only(bottom: 18),
-          child: Container(
-            key: key,
-            width: double.infinity,
-            padding: highlight
-                ? const EdgeInsets.fromLTRB(12, 10, 12, 10)
-                : EdgeInsets.zero,
-            decoration: highlight
-                ? BoxDecoration(
-                    border: Border.all(color: borderColor, width: 1.15),
-                    borderRadius: BorderRadius.circular(10),
-                  )
-                : null,
-            child: Text.rich(
-              TextSpan(
-                style: baseStyle,
-                children: List<InlineSpan>.from(children),
-              ),
-            ),
-          ),
+          child: card,
         ),
       );
       children.clear();
@@ -2945,7 +3315,8 @@ class VerseHelper {
         final verseNumKey = 'verse_${verseNumber}_num';
         final bool isJumpTarget = targetVerse == verseNumber;
         final bool highlightVerse =
-            framedVerses?.contains(verseNumber) ?? false;
+            (framedVerses?.contains(verseNumber) ?? false) ||
+            (multiSelectedVerses?.contains(verseNumber) ?? false);
 
         final GlobalKey? verseAnchorKey = verseKeys == null
             ? null
@@ -2957,20 +3328,18 @@ class VerseHelper {
             child: Padding(
               padding: const EdgeInsets.only(right: 8),
               child: GestureDetector(
-                onTap: () {
-                  if (enableMultiSelect) {
-                    onVerseSelectToggle?.call(verseNumber, verseText);
-                  } else {
-                    VerseHelper.handleVerseNumberClick(
-                      context,
-                      bookName,
-                      chapterNumber,
-                      verseNumber,
-                      verseText,
-                      onWordClick: onWordClick,
-                    );
-                  }
-                },
+                onTap: enableMultiSelect
+                    ? null
+                    : () {
+                        VerseHelper.handleVerseNumberClick(
+                          context,
+                          bookName,
+                          chapterNumber,
+                          verseNumber,
+                          verseText,
+                          onWordClick: onWordClick,
+                        );
+                      },
                 child: Transform.translate(
                   offset: const Offset(0, -7),
                   child: Text(
@@ -3013,22 +3382,20 @@ class VerseHelper {
                 continue;
               }
 
-              final wordTapRecognizer = TapGestureRecognizer()
-                ..onTap = () {
-                  if (enableMultiSelect) {
-                    onVerseSelectToggle?.call(verseNumber, verseText);
-                  } else {
-                    VerseHelper.handleWordClick(
-                      context,
-                      bookName,
-                      chapterNumber,
-                      verseNumber,
-                      verseText,
-                      null,
-                      onWordClick: onWordClick,
-                    );
-                  }
-                };
+              final wordTapRecognizer = enableMultiSelect
+                  ? null
+                  : (TapGestureRecognizer()
+                    ..onTap = () {
+                      VerseHelper.handleWordClick(
+                        context,
+                        bookName,
+                        chapterNumber,
+                        verseNumber,
+                        verseText,
+                        null,
+                        onWordClick: onWordClick,
+                      );
+                    });
 
               var highlightLength = 1;
               var isSearchHit = false;
@@ -3205,7 +3572,8 @@ class VerseHelper {
           final verseKey = 'verse_$verseNum';
           final verseNumKey = 'verse_${verseNum}_num';
           final bool highlightVerse =
-              multiSelectedVerses?.contains(verseNum) ?? false;
+              (multiSelectedVerses?.contains(verseNum) ?? false) ||
+              (framedVerses?.contains(verseNum) ?? false);
 
           final words = textContent.split(RegExp(r'(\s+)'));
           for (int i = 0; i < words.length; i++) {
@@ -3218,22 +3586,20 @@ class VerseHelper {
                 ),
               );
             } else {
-              final wordTapRecognizer = TapGestureRecognizer()
-                ..onTap = () {
-                  if (enableMultiSelect) {
-                    onVerseSelectToggle?.call(verseNum, verseTxt);
-                  } else {
-                    VerseHelper.handleWordClick(
-                      context,
-                      bookName,
-                      chapterNumber,
-                      verseNum,
-                      verseTxt,
-                      null,
-                      onWordClick: onWordClick,
-                    );
-                  }
-                };
+              final wordTapRecognizer = enableMultiSelect
+                  ? null
+                  : (TapGestureRecognizer()
+                    ..onTap = () {
+                      VerseHelper.handleWordClick(
+                        context,
+                        bookName,
+                        chapterNumber,
+                        verseNum,
+                        verseTxt,
+                        null,
+                        onWordClick: onWordClick,
+                      );
+                    });
 
               final separator =
                   (i < words.length - 1 && words[i + 1].trim().isNotEmpty)
@@ -3266,6 +3632,42 @@ class VerseHelper {
     );
   }
 
+  static String shortBookLabel(String bookName, String edition) {
+    if (edition == _bibleEditionTbs) return TbsBible.shortName(bookName);
+    if (edition == _bibleEditionSynod) return RuSynodalBible.shortName(bookName);
+    if (edition == _bibleEditionKjv) return EnKjvBible.shortName(bookName);
+    return bookName;
+  }
+
+  static String selectionReference(
+    String bookName,
+    int chapterNumber,
+    Map<int, String> verses, {
+    required String edition,
+  }) {
+    final label = shortBookLabel(bookName, edition);
+    final nums = verses.keys.toList()..sort();
+    if (nums.isEmpty) return label;
+    final parts = <String>[];
+    var start = nums.first;
+    var prev = nums.first;
+    for (var i = 1; i < nums.length; i++) {
+      if (nums[i] == prev + 1) {
+        prev = nums[i];
+      } else {
+        parts.add(start == prev ? '$start' : '$start–$prev');
+        start = prev = nums[i];
+      }
+    }
+    parts.add(start == prev ? '$start' : '$start–$prev');
+    return '$label $chapterNumber:${parts.join(',')}';
+  }
+
+  static String selectionText(Map<int, String> verses) {
+    final nums = verses.keys.toList()..sort();
+    return nums.map((n) => '$n ${verses[n]}').join('\n\n');
+  }
+
   static Future<void> copyVerse(
     BuildContext context,
     String bookName,
@@ -3274,21 +3676,37 @@ class VerseHelper {
     String verseText, {
     String edition = _bibleEditionArarat,
   }) async {
-    final label = edition == _bibleEditionTbs
-        ? TbsBible.shortName(bookName)
-        : edition == _bibleEditionSynod
-            ? RuSynodalBible.shortName(bookName)
-            : edition == _bibleEditionKjv
-                ? EnKjvBible.shortName(bookName)
-                : bookName;
-    final textToCopy = '$label $chapterNumber:$verseNumber\n$verseText';
+    await copyVerses(
+      context,
+      bookName,
+      chapterNumber,
+      {verseNumber: verseText},
+      edition: edition,
+    );
+  }
+
+  static Future<void> copyVerses(
+    BuildContext context,
+    String bookName,
+    int chapterNumber,
+    Map<int, String> verses, {
+    String edition = _bibleEditionArarat,
+  }) async {
+    if (verses.isEmpty) return;
+    final ref = selectionReference(
+      bookName,
+      chapterNumber,
+      verses,
+      edition: edition,
+    );
+    final textToCopy = '$ref\n${selectionText(verses)}';
     await Clipboard.setData(ClipboardData(text: textToCopy));
     if (context.mounted) {
       final copiedPrefix = bibleUiStrings(edition).copiedPrefix;
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('$copiedPrefix $label $chapterNumber:$verseNumber'),
+          content: Text('$copiedPrefix $ref'),
           duration: const Duration(seconds: 1),
         ),
       );
@@ -4178,6 +4596,11 @@ class _ChapterTextScreenState extends State<ChapterTextScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scrollToTargetVerse();
     });
+    saveBibleLastChapter(
+      bookName: widget.bookName,
+      chapterNumber: widget.chapterNumber,
+      edition: widget.edition,
+    );
   }
 
   Future<void> _loadReaderFontSize() async {
@@ -4251,6 +4674,7 @@ class _ChapterTextScreenState extends State<ChapterTextScreen> {
         _selectedVerses[verseNumber] = verseText;
       }
     });
+    _publishVerseActions();
   }
 
   // Ավելացնել նոր մեթոդ՝ հարեւան համարները միավորելու համար
@@ -4301,6 +4725,7 @@ class _ChapterTextScreenState extends State<ChapterTextScreen> {
     setState(() {
       _selectedVerses.clear();
     });
+    _publishVerseActions();
   }
 
   Future<void> _saveSelectedVerses() async {
@@ -4358,6 +4783,7 @@ class _ChapterTextScreenState extends State<ChapterTextScreen> {
     setState(() {
       _selectedVerses.clear();
     });
+    _publishVerseActions();
   }
 
   void _openChapter(int chapterNumber) {
@@ -4513,14 +4939,68 @@ class _ChapterTextScreenState extends State<ChapterTextScreen> {
   ) async {
     _hideActionPanel();
     if (!mounted) return;
-    await showVerseActionSheet(
-      context: context,
-      bookName: bookName,
-      chapterNumber: chapterNumber,
-      verseNumber: verseNumber,
-      verseText: verseText,
+    _toggleVerseSelection(verseNumber, verseText);
+  }
+
+  Future<void> _openSelectedAi() async {
+    if (_selectedVerses.isEmpty) return;
+    final ref = VerseHelper.selectionReference(
+      widget.bookName,
+      widget.chapterNumber,
+      _selectedVerses,
       edition: widget.edition,
-      anchorKey: _verseKeys[verseNumber],
+    );
+    VerseActionNavScope.maybeOf(context)?.hide();
+    await _openSpiritualAi(
+      context,
+      'Բացատրիր $ref\n\n«${VerseHelper.selectionText(_selectedVerses)}»',
+    );
+    if (!mounted) return;
+    _publishVerseActions();
+  }
+
+  Future<void> _openSelectedCompare() async {
+    if (_selectedVerses.isEmpty) return;
+    final verseNumber = (_selectedVerses.keys.toList()..sort()).first;
+    VerseActionNavScope.maybeOf(context)?.hide();
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _TranslationCompareScreen(
+          bookName: widget.bookName,
+          chapterNumber: widget.chapterNumber,
+          verseNumber: verseNumber,
+          verseText: _selectedVerses[verseNumber] ?? '',
+          edition: widget.edition,
+        ),
+      ),
+    );
+    if (!mounted) return;
+  }
+
+  Future<void> _copySelectedVerses() async {
+    if (_selectedVerses.isEmpty) return;
+    await VerseHelper.copyVerses(
+      context,
+      widget.bookName,
+      widget.chapterNumber,
+      Map<int, String>.from(_selectedVerses),
+      edition: widget.edition,
+    );
+    if (!mounted) return;
+    _clearSelections();
+  }
+
+  void _publishVerseActions() {
+    syncVerseActionNav(
+      context,
+      edition: widget.edition,
+      selected: _selectedVerses,
+      onAi: _openSelectedAi,
+      onCompare: _openSelectedCompare,
+      onCopy: _copySelectedVerses,
+      onSave: _saveSelectedVerses,
+      onCancel: _clearSelections,
     );
   }
 
@@ -4551,6 +5031,7 @@ class _ChapterTextScreenState extends State<ChapterTextScreen> {
     _targetRingTimer?.cancel();
     _frameClearTimer?.cancel();
     _hideActionPanel(fromDispose: true);
+    VerseActionNavScope.maybeOf(context)?.hide();
     _scrollController.dispose();
     super.dispose();
   }
@@ -4571,13 +5052,20 @@ class _ChapterTextScreenState extends State<ChapterTextScreen> {
             '${bibleBookLabel(widget.bookName, widget.edition)} ${widget.chapterNumber}',
         onBack: () {
           ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          if (_selectedVerses.isNotEmpty) {
+            _clearSelections();
+            return;
+          }
           Navigator.pop(context);
         },
+        onTitleTap:
+            _selectedVerses.isNotEmpty ? _clearSelections : null,
         onFontSize: _showFontSizeSheet,
       ),
       body: GestureDetector(
         onTap: () {
           _hideActionPanel();
+          _clearSelections();
         },
         behavior: HitTestBehavior.translucent,
         child: Column(
@@ -4611,8 +5099,12 @@ class _ChapterTextScreenState extends State<ChapterTextScreen> {
                         wordKey,
                       );
                     },
-                    enableMultiSelect: false,
-                    framedVerses: _framedVerses.isEmpty ? null : _framedVerses,
+                    enableMultiSelect: true,
+                    multiSelectedVerses: _selectedVerses.keys.toSet(),
+                    framedVerses: {
+                      ..._framedVerses,
+                      ..._selectedVerses.keys,
+                    },
                     onVerseSelectToggle: (verseNumber, verseText) {
                       _toggleVerseSelection(verseNumber, verseText);
                     },
@@ -4635,20 +5127,21 @@ class _ChapterTextScreenState extends State<ChapterTextScreen> {
                 ),
               ),
             ),
-            _bibleReaderBottomNav(
-              isDark: isDark,
-              edition: widget.edition,
-              chapterNumber: widget.chapterNumber,
-              totalChapters: totalChapters,
-              hasPrevious: hasPreviousChapter,
-              hasNext: hasNextChapter,
-              onPrevious: hasPreviousChapter
-                  ? () => _openChapter(widget.chapterNumber - 1)
-                  : null,
-              onNext: hasNextChapter
-                  ? () => _openChapter(widget.chapterNumber + 1)
-                  : null,
-            ),
+            if (_selectedVerses.isEmpty)
+              _bibleReaderBottomNav(
+                isDark: isDark,
+                edition: widget.edition,
+                chapterNumber: widget.chapterNumber,
+                totalChapters: totalChapters,
+                hasPrevious: hasPreviousChapter,
+                hasNext: hasNextChapter,
+                onPrevious: hasPreviousChapter
+                    ? () => _openChapter(widget.chapterNumber - 1)
+                    : null,
+                onNext: hasNextChapter
+                    ? () => _openChapter(widget.chapterNumber + 1)
+                    : null,
+              ),
           ],
         ),
       ),
@@ -5319,6 +5812,7 @@ class _ChapterTextScreenWithHighlightState
         _selectedVerses[verseNumber] = verseText;
       }
     });
+    _publishVerseActions();
   }
 
   List<Map<String, dynamic>> _getVerseRanges() {
@@ -5367,6 +5861,7 @@ class _ChapterTextScreenWithHighlightState
     setState(() {
       _selectedVerses.clear();
     });
+    _publishVerseActions();
   }
 
   Future<void> _saveSelectedVerses() async {
@@ -5424,6 +5919,7 @@ class _ChapterTextScreenWithHighlightState
     setState(() {
       _selectedVerses.clear();
     });
+    _publishVerseActions();
   }
 
   Widget _buildMultiSelectControls(bool isDark) {
@@ -5455,9 +5951,84 @@ class _ChapterTextScreenWithHighlightState
     );
   }
 
+  Future<void> _showActionPanel(
+    String bookName,
+    int chapterNumber,
+    int verseNumber,
+    String verseText,
+    String? wordKey,
+  ) async {
+    _hideActionPanel();
+    if (!mounted) return;
+    _toggleVerseSelection(verseNumber, verseText);
+  }
+
+  Future<void> _openSelectedAi() async {
+    if (_selectedVerses.isEmpty) return;
+    final ref = VerseHelper.selectionReference(
+      widget.bookName,
+      widget.chapterNumber,
+      _selectedVerses,
+      edition: widget.edition,
+    );
+    VerseActionNavScope.maybeOf(context)?.hide();
+    await _openSpiritualAi(
+      context,
+      'Բացատրիր $ref\n\n«${VerseHelper.selectionText(_selectedVerses)}»',
+    );
+    if (!mounted) return;
+    _publishVerseActions();
+  }
+
+  Future<void> _openSelectedCompare() async {
+    if (_selectedVerses.isEmpty) return;
+    final verseNumber = (_selectedVerses.keys.toList()..sort()).first;
+    VerseActionNavScope.maybeOf(context)?.hide();
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _TranslationCompareScreen(
+          bookName: widget.bookName,
+          chapterNumber: widget.chapterNumber,
+          verseNumber: verseNumber,
+          verseText: _selectedVerses[verseNumber] ?? '',
+          edition: widget.edition,
+        ),
+      ),
+    );
+    if (!mounted) return;
+  }
+
+  Future<void> _copySelectedVerses() async {
+    if (_selectedVerses.isEmpty) return;
+    await VerseHelper.copyVerses(
+      context,
+      widget.bookName,
+      widget.chapterNumber,
+      Map<int, String>.from(_selectedVerses),
+      edition: widget.edition,
+    );
+    if (!mounted) return;
+    _clearSelections();
+  }
+
+  void _publishVerseActions() {
+    syncVerseActionNav(
+      context,
+      edition: widget.edition,
+      selected: _selectedVerses,
+      onAi: _openSelectedAi,
+      onCompare: _openSelectedCompare,
+      onCopy: _copySelectedVerses,
+      onSave: _saveSelectedVerses,
+      onCancel: _clearSelections,
+    );
+  }
+
   @override
   void dispose() {
     _hideActionPanel(fromDispose: true);
+    VerseActionNavScope.maybeOf(context)?.hide();
     _scrollController.dispose();
     super.dispose();
   }
@@ -5471,26 +6042,6 @@ class _ChapterTextScreenWithHighlightState
         isMounted: () => mounted,
       );
     });
-  }
-
-  Future<void> _showActionPanel(
-    String bookName,
-    int chapterNumber,
-    int verseNumber,
-    String verseText,
-    String? wordKey,
-  ) async {
-    _hideActionPanel();
-    if (!mounted) return;
-    await showVerseActionSheet(
-      context: context,
-      bookName: bookName,
-      chapterNumber: chapterNumber,
-      verseNumber: verseNumber,
-      verseText: verseText,
-      edition: widget.edition,
-      anchorKey: _verseKeys[verseNumber],
-    );
   }
 
   void _hideActionPanel({bool fromDispose = false}) {
@@ -5530,12 +6081,21 @@ class _ChapterTextScreenWithHighlightState
         isDark: isDark,
         title:
             '${bibleBookLabel(widget.bookName, widget.edition)} ${widget.chapterNumber}',
-        onBack: () => Navigator.pop(context),
+        onBack: () {
+          if (_selectedVerses.isNotEmpty) {
+            _clearSelections();
+            return;
+          }
+          Navigator.pop(context);
+        },
+        onTitleTap:
+            _selectedVerses.isNotEmpty ? _clearSelections : null,
         onFontSize: _showFontSizeSheet,
       ),
       body: GestureDetector(
         onTap: () {
           _hideActionPanel();
+          _clearSelections();
         },
         behavior: HitTestBehavior.translucent,
         child: Column(
@@ -5554,6 +6114,9 @@ class _ChapterTextScreenWithHighlightState
                     verseKeys: _verseKeys,
                     targetVerse: widget.targetVerse,
                     searchQuery: widget.searchQuery,
+                    enableMultiSelect: true,
+                    multiSelectedVerses: _selectedVerses.keys.toSet(),
+                    framedVerses: _selectedVerses.keys.toSet(),
                     onWordClick: (
                       bookName,
                       chapterNumber,
@@ -5568,6 +6131,9 @@ class _ChapterTextScreenWithHighlightState
                         verseText,
                         wordKey,
                       );
+                    },
+                    onVerseSelectToggle: (verseNumber, verseText) {
+                      _toggleVerseSelection(verseNumber, verseText);
                     },
                     onVerseAction: (
                       bookName,
@@ -5588,48 +6154,49 @@ class _ChapterTextScreenWithHighlightState
                 ),
               ),
             ),
-            _bibleReaderBottomNav(
-              isDark: isDark,
-              edition: widget.edition,
-              chapterNumber: widget.chapterNumber,
-              totalChapters: totalChapters,
-              hasPrevious: hasPreviousChapter,
-              hasNext: hasNextChapter,
-              onPrevious: hasPreviousChapter
-                  ? () {
-                      Navigator.pushReplacement(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => ChapterTextScreenWithHighlight(
-                            bookName: widget.bookName,
-                            chapterNumber: widget.chapterNumber - 1,
-                            searchQuery: widget.searchQuery,
-                            targetVerse: null,
-                            targetWord: null,
-                            edition: widget.edition,
+            if (_selectedVerses.isEmpty)
+              _bibleReaderBottomNav(
+                isDark: isDark,
+                edition: widget.edition,
+                chapterNumber: widget.chapterNumber,
+                totalChapters: totalChapters,
+                hasPrevious: hasPreviousChapter,
+                hasNext: hasNextChapter,
+                onPrevious: hasPreviousChapter
+                    ? () {
+                        Navigator.pushReplacement(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => ChapterTextScreenWithHighlight(
+                              bookName: widget.bookName,
+                              chapterNumber: widget.chapterNumber - 1,
+                              searchQuery: widget.searchQuery,
+                              targetVerse: null,
+                              targetWord: null,
+                              edition: widget.edition,
+                            ),
                           ),
-                        ),
-                      );
-                    }
-                  : null,
-              onNext: hasNextChapter
-                  ? () {
-                      Navigator.pushReplacement(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => ChapterTextScreenWithHighlight(
-                            bookName: widget.bookName,
-                            chapterNumber: widget.chapterNumber + 1,
-                            searchQuery: widget.searchQuery,
-                            targetVerse: null,
-                            targetWord: null,
-                            edition: widget.edition,
+                        );
+                      }
+                    : null,
+                onNext: hasNextChapter
+                    ? () {
+                        Navigator.pushReplacement(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => ChapterTextScreenWithHighlight(
+                              bookName: widget.bookName,
+                              chapterNumber: widget.chapterNumber + 1,
+                              searchQuery: widget.searchQuery,
+                              targetVerse: null,
+                              targetWord: null,
+                              edition: widget.edition,
+                            ),
                           ),
-                        ),
-                      );
-                    }
-                  : null,
-            ),
+                        );
+                      }
+                    : null,
+              ),
           ],
         ),
       ),

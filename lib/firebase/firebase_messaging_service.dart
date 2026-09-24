@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -21,58 +22,56 @@ class FirebaseMessagingService {
   static final FirebaseMessaging _messaging = FirebaseMessaging.instance;
 
   static Future<void> initialize() async {
-    final messaging = FirebaseMessaging.instance;
-    final settings = await messaging.requestPermission(
-      alert: true,
-      badge: true,
-      sound: true,
-    );
-    print('Notification permission: ${settings.authorizationStatus}');
-
-    await messaging.setForegroundNotificationPresentationOptions(
-      alert: true,
-      badge: true,
-      sound: true,
-    );
-
-    await _waitForIosApnsToken();
-    final apnsToken = await messaging.getAPNSToken();
-    print('APNs Token: $apnsToken');
-    String? fcmToken;
     try {
-      fcmToken = await messaging.getToken();
-    } catch (e) {
-      print('FCM Token error: $e');
-    }
-    print('FCM Token: $fcmToken');
+      FirebaseFirestore.instance.settings = const Settings(
+        persistenceEnabled: true,
+        cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+      );
+    } catch (_) {}
 
-    await _registerDevice();
-    messaging.onTokenRefresh.listen((token) {
-      print('FCM Token refreshed: $token');
-      _registerDevice();
-    });
+    try {
+      await _messaging
+          .requestPermission(
+            alert: true,
+            badge: true,
+            sound: true,
+          )
+          .timeout(const Duration(seconds: 3));
+    } catch (_) {}
 
-    FirebaseMessaging.onMessageOpenedApp.listen(_handleTap);
+    try {
+      await _messaging.setForegroundNotificationPresentationOptions(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+    } catch (_) {}
 
-    final initialMessage = await _messaging.getInitialMessage();
-    if (initialMessage != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _handleTap(initialMessage);
+    unawaited(_registerDevice());
+    try {
+      _messaging.onTokenRefresh.listen((token) {
+        _registerDevice();
       });
-    }
+    } catch (_) {}
+
+    try {
+      FirebaseMessaging.onMessageOpenedApp.listen(_handleTap);
+    } catch (_) {}
+
+    try {
+      final initialMessage = await _messaging
+          .getInitialMessage()
+          .timeout(const Duration(seconds: 2));
+      if (initialMessage != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _handleTap(initialMessage);
+        });
+      }
+    } catch (_) {}
 
     if (Platform.isIOS) {
       Future<void>.delayed(const Duration(seconds: 3), _registerDevice);
       Future<void>.delayed(const Duration(seconds: 10), _registerDevice);
-    }
-  }
-
-  static Future<void> _waitForIosApnsToken() async {
-    if (!Platform.isIOS) return;
-    for (var i = 0; i < 30; i++) {
-      final token = await _messaging.getAPNSToken();
-      if (token != null && token.isNotEmpty) return;
-      await Future<void>.delayed(const Duration(milliseconds: 500));
     }
   }
 
@@ -81,11 +80,17 @@ class FirebaseMessagingService {
     String apnsToken = '';
     try {
       if (Platform.isIOS) {
-        apnsToken = (await _messaging.getAPNSToken())?.replaceAll(' ', '') ?? '';
+        apnsToken = (await _messaging
+                    .getAPNSToken()
+                    .timeout(const Duration(seconds: 2)))
+                ?.replaceAll(' ', '') ??
+            '';
       }
     } catch (_) {}
     try {
-      fcmToken = (await _messaging.getToken()) ?? '';
+      fcmToken =
+          (await _messaging.getToken().timeout(const Duration(seconds: 4))) ??
+              '';
     } catch (_) {}
 
     final id = fcmToken.isNotEmpty
@@ -93,17 +98,23 @@ class FirebaseMessagingService {
         : (apnsToken.isNotEmpty ? 'apns_$apnsToken' : '');
     if (id.isNotEmpty) {
       try {
-        await FirebaseFirestore.instance.collection('verseOfDay').doc(id).set({
+        await FirebaseFirestore.instance
+            .collection('verseOfDay')
+            .doc(id)
+            .set({
           'token': fcmToken,
           'apnsToken': apnsToken,
           'platform': Platform.operatingSystem,
           'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
+        }, SetOptions(merge: true))
+            .timeout(const Duration(seconds: 4));
       } catch (_) {}
     }
 
     try {
-      await _messaging.subscribeToTopic('all_users');
+      await _messaging
+          .subscribeToTopic('all_users')
+          .timeout(const Duration(seconds: 4));
     } catch (_) {}
   }
 
