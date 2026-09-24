@@ -642,7 +642,7 @@ class _MessageBubble extends StatelessWidget {
           chapterNumber: passage.chapter,
           text: text,
           targetVerse: passage.verse,
-          autoClearFramesAfter: const Duration(seconds: 5),
+          autoClearFramesAfter: const Duration(seconds: 2),
         ),
       ),
     );

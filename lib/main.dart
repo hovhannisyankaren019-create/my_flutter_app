@@ -1153,6 +1153,10 @@ class _HomeScreenState extends State<HomeScreen> {
     _searchKey.currentState?.resetToStart();
   }
 
+  void _resetSavedVersesTab() {
+    _navKeys[3].currentState?.popUntil((route) => route.isFirst);
+  }
+
   void _onTabSelected(int index) {
     if (index == 1 && _verseActions.openChaptersOnNextBibleTab) {
       _verseActions.openChaptersOnNextBibleTab = false;
@@ -1170,6 +1174,9 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_tabIndex == 2) {
       _resetSearchTab();
     }
+    if (_tabIndex == 3) {
+      _resetSavedVersesTab();
+    }
     if (index == 1) {
       _restoreLastChapterOnBibleTab = true;
     }
@@ -1186,6 +1193,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
       _navKeys[0].currentState?.popUntil((route) => route.isFirst);
       _resetSearchTab();
+      _resetSavedVersesTab();
       if (index == 3) {
         _savedVersesKey.currentState?.reload();
       }
@@ -1768,7 +1776,7 @@ class _HomeTab extends StatelessWidget {
           text: chapter,
           targetVerse: parsed.verse,
           edition: edition,
-          autoClearFramesAfter: const Duration(seconds: 5),
+          autoClearFramesAfter: const Duration(seconds: 2),
         ),
       ),
     );
@@ -2482,6 +2490,7 @@ class _SavedVersesScreenState extends State<SavedVersesScreen> {
                               text: text,
                               targetVerse: selectedVerses.first,
                               initialSelectedVerses: selectedVerses,
+                              autoClearFramesAfter: const Duration(seconds: 2),
                               edition: edition,
                             ),
                           ),
@@ -4640,7 +4649,6 @@ class _ChapterTextScreenState extends State<ChapterTextScreen> {
   void initState() {
     super.initState();
     _loadReaderFontSize();
-    _applyInitialVerseSelection();
     final savedFrames = widget.initialSelectedVerses;
     if (savedFrames != null && savedFrames.isNotEmpty) {
       _framedVerses.addAll(savedFrames);
@@ -4708,19 +4716,6 @@ class _ChapterTextScreenState extends State<ChapterTextScreen> {
       if (!mounted) return;
       setState(() => _framedVerses.clear());
     });
-  }
-
-  void _applyInitialVerseSelection() {
-    final numbers = widget.initialSelectedVerses;
-    if (numbers == null || numbers.isEmpty) return;
-
-    final parsed = VerseHelper.parseVerses(widget.text);
-    for (final n in numbers) {
-      final verseText = parsed[n];
-      if (verseText != null && verseText.isNotEmpty) {
-        _selectedVerses[n] = verseText;
-      }
-    }
   }
 
   void _toggleVerseSelection(int verseNumber, String verseText) {

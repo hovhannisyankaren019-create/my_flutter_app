@@ -1,7 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class _VerseOfDayCache {
@@ -188,21 +188,10 @@ class _VerseOfDayHomeCardState extends State<VerseOfDayHomeCard> {
                                     final shareText = reference.isEmpty
                                         ? quoted
                                         : '$quoted\n$reference';
-                                    await Clipboard.setData(
-                                      ClipboardData(text: shareText),
-                                    );
-                                    if (!context.mounted) return;
-                                    ScaffoldMessenger.of(context)
-                                        .hideCurrentSnackBar();
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('Պատճենված է'),
-                                        duration: Duration(seconds: 1),
-                                      ),
-                                    );
+                                    await Share.share(shareText);
                                   },
                                   icon: Icon(
-                                    Icons.content_copy,
+                                    Icons.ios_share,
                                     size: 18,
                                     color: titleColor,
                                   ),
