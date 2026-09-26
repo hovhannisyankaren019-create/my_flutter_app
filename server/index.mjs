@@ -4,6 +4,8 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import {fileURLToPath} from "node:url";
+import { cert, getApps, initializeApp } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -303,6 +305,20 @@ function serviceAccountFromEnv() {
     return null;
   }
   return null;
+}
+
+function getFirebaseAdminAuth() {
+  const sa = serviceAccountFromEnv();
+  if (!sa?.client_email || !sa?.private_key) {
+    return null;
+  }
+  const apps = getApps();
+  const app = apps.length > 0
+    ? apps[0]
+    : initializeApp({
+        credential: cert(sa),
+      });
+  return getAuth(app);
 }
 
 async function firebaseMessagingToken(sa) {
@@ -1119,7 +1135,7 @@ function replaceForeignWords(text) {
   return out.replace(/[A-Za-z]{3,}/g, "").replace(/[ \t]{2,}/g, " ").trim();
 }
 
-async function completeChat(openaiKey, messages, maxTokens = 1800) {
+async function completeChat(openaiKey, messages, maxTokens = 1800, temperature = 0.2) {
   const openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -1128,7 +1144,7 @@ async function completeChat(openaiKey, messages, maxTokens = 1800) {
     },
     body: JSON.stringify({
       model: process.env.OPENAI_MODEL || "gpt-4o-mini",
-      temperature: 0.2,
+      temperature,
       max_tokens: maxTokens,
       messages,
     }),
@@ -1718,19 +1734,79 @@ async function handleAppChat(req, res, body) {
     }
   }
 
+  let decodedToken = null;
+  const authHeader = String(req.headers.authorization || "");
+  if (authHeader.startsWith("Bearer ")) {
+    const idToken = authHeader.slice("Bearer ".length).trim();
+    try {
+      const firebaseAuth = getFirebaseAdminAuth();
+      if (firebaseAuth) {
+        decodedToken = await firebaseAuth.verifyIdToken(idToken);
+      }
+    } catch (error) {
+      console.error("Firebase ID token verification failed:", error);
+      json(res, 401, {error: "Invalid Firebase authentication"});
+      return;
+    }
+  }
+
+  const identityEmails = decodedToken?.firebase?.identities?.email;
+  const identityEmail = Array.isArray(identityEmails)
+    ? String(identityEmails[0] || "")
+    : "";
+  const userEmail = String(decodedToken?.email || identityEmail)
+    .trim()
+    .toLowerCase();
+  const isUnlimitedUser =
+    userEmail === "artopastor@gmail.com" ||
+    userEmail === "hovhannisyankaren019@gmail.com";
+
   const ip = clientIp(req);
-  if (rateLimited(ip)) {
+  // artopastor@gmail.com-ը rate limit չունի։
+  // Մյուս բոլորը շարունակում են ունենալ 20 հարց / 10 րոպե։
+  if (!isUnlimitedUser && rateLimited(ip)) {
     json(res, 429, {error: "Too many requests"});
     return;
   }
 
-  const message = asString(body.message, 2000);
+  const message = asString(body.message, isUnlimitedUser ? 12000 : 2000);
   if (!message) {
     json(res, 400, {error: "Missing message"});
     return;
   }
 
   try {
+    // ARTOPASTOR — սովորական OpenAI
+    if (isUnlimitedUser) {
+      const openaiKey = process.env.OPENAI_API_KEY || "";
+      if (!openaiKey) {
+        throw new Error("not_configured");
+      }
+
+      const messages = [
+        {
+          role: "system",
+          content:
+            "You are a helpful assistant. Answer naturally, like a normal chat, in the language the user writes in. Do not refuse everyday questions.",
+        },
+      ];
+      if (Array.isArray(body.history)) {
+        for (const turn of body.history.slice(-12)) {
+          const role = turn?.role === "assistant" ? "assistant" : "user";
+          const content = asString(turn?.content, 4000);
+          if (!content) continue;
+          messages.push({role, content});
+        }
+      }
+
+      messages.push({role: "user", content: message});
+
+      const reply = await completeChat(openaiKey, messages, 4096, 0.7);
+      json(res, 200, {reply});
+      return;
+    }
+
+    // Մնացածները — հոգևոր ԱԲ
     const reply = await generateReply({
       message,
       history: body.history,
@@ -1824,6 +1900,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`Spiritual AI server listening on port ${PORT}`);
+  getFirebaseAdminAuth();
   refreshLearned().catch((error) => {
     console.error("Failed to load lessons", error);
   });
