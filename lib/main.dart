@@ -9,6 +9,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:vibration/vibration.dart';
 import 'dart:math' as math;
 
 import 'firebase_options.dart';
@@ -58,6 +59,18 @@ Future<void> ensureBibleEditionLoaded(String edition) async {
   } else if (edition == _bibleEditionKjv) {
     await EnKjvBible.ensureLoaded();
   }
+}
+
+void hapticVerseSelect() {
+  unawaited(() async {
+    try {
+      if (await Vibration.hasVibrator() == true) {
+        await Vibration.vibrate(duration: 45);
+        return;
+      }
+    } catch (_) {}
+    await HapticFeedback.vibrate();
+  }());
 }
 
 class AppColors {
@@ -1069,8 +1082,22 @@ class _HomeScreenState extends State<HomeScreen> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_lastBibleEditionPrefsKey, edition);
     if (!mounted) return;
+    _navKeys[1].currentState?.popUntil((route) => route.isFirst);
+    if (_tabIndex != 1) {
+      _pageController.animateToPage(
+        1,
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
+  Future<void> _openLastBookChapters() async {
+    _restoreLastChapterOnBibleTab = false;
     final nav = _navKeys[1].currentState;
     nav?.popUntil((route) => route.isFirst);
+    final prefs = await SharedPreferences.getInstance();
+    final edition = _lastBibleEdition;
     final book = prefs.getString(bibleLastBookPrefsKey(edition));
     if (book != null && book.isNotEmpty) {
       try {
@@ -1161,7 +1188,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (index == 1 && _verseActions.openChaptersOnNextBibleTab) {
       _verseActions.openChaptersOnNextBibleTab = false;
       _verseActions.hide();
-      _openBibleEdition(_lastBibleEdition);
+      _openLastBookChapters();
       return;
     }
     if (index == _tabIndex) {
@@ -2320,17 +2347,25 @@ class _SavedVersesScreenState extends State<SavedVersesScreen> {
     try {
       final prefs = await SharedPreferences.getInstance();
       final savedVersesJson = prefs.getStringList('saved_verses') ?? [];
-
-      setState(() {
-        _savedVerses = savedVersesJson.map((json) {
-          return jsonDecode(json) as Map<String, dynamic>;
-        }).toList();
-        _savedVerses.sort((a, b) {
-          final dateA = DateTime.parse(a['date'] as String);
-          final dateB = DateTime.parse(b['date'] as String);
-          return dateB.compareTo(dateA);
-        });
+      final verses = savedVersesJson.map((json) {
+        return jsonDecode(json) as Map<String, dynamic>;
+      }).toList();
+      verses.sort((a, b) {
+        final dateA = DateTime.parse(a['date'] as String);
+        final dateB = DateTime.parse(b['date'] as String);
+        return dateB.compareTo(dateA);
       });
+
+      final editions = <String>{
+        for (final verse in verses)
+          verse['edition'] as String? ?? _bibleEditionArarat,
+      };
+      for (final edition in editions) {
+        await ensureBibleEditionLoaded(edition);
+      }
+
+      if (!mounted) return;
+      setState(() => _savedVerses = verses);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
@@ -2375,6 +2410,44 @@ class _SavedVersesScreenState extends State<SavedVersesScreen> {
         );
       }
     }
+  }
+
+  Future<void> _openSavedVerse(Map<String, dynamic> verse) async {
+    final bookName = verse['book'] as String;
+    final edition = verse['edition'] as String? ?? _bibleEditionArarat;
+    final chapterNumber = verse['chapter'] as int;
+    final verseNumber = verse['verse'] as int;
+    final range = verse['range'] as String?;
+    await ensureBibleEditionLoaded(edition);
+    if (!mounted) return;
+    final text = bibleChapterText(bookName, chapterNumber, edition);
+    final List<int> selectedVerses;
+    if (range != null && range.contains('-')) {
+      final parts = range.split('-');
+      final start = int.parse(parts[0]);
+      final end = int.parse(parts[1]);
+      selectedVerses = [
+        for (int n = start; n <= end; n++) n,
+      ];
+    } else {
+      selectedVerses = [verseNumber];
+    }
+
+    if (!mounted) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ChapterTextScreen(
+          bookName: bookName,
+          chapterNumber: chapterNumber,
+          text: text,
+          targetVerse: selectedVerses.first,
+          initialSelectedVerses: selectedVerses,
+          autoClearFramesAfter: const Duration(seconds: 2),
+          edition: edition,
+        ),
+      ),
+    );
   }
 
   Future<void> _copyVerse(
@@ -2466,36 +2539,7 @@ class _SavedVersesScreenState extends State<SavedVersesScreen> {
                   return Card(
                     margin: const EdgeInsets.only(bottom: 12),
                     child: InkWell(
-                      onTap: () {
-                        final text =
-                            bibleChapterText(bookName, chapterNumber, edition);
-                        final List<int> selectedVerses;
-                        if (range != null && range.contains('-')) {
-                          final parts = range.split('-');
-                          final start = int.parse(parts[0]);
-                          final end = int.parse(parts[1]);
-                          selectedVerses = [
-                            for (int n = start; n <= end; n++) n,
-                          ];
-                        } else {
-                          selectedVerses = [verseNumber];
-                        }
-
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => ChapterTextScreen(
-                              bookName: bookName,
-                              chapterNumber: chapterNumber,
-                              text: text,
-                              targetVerse: selectedVerses.first,
-                              initialSelectedVerses: selectedVerses,
-                              autoClearFramesAfter: const Duration(seconds: 2),
-                              edition: edition,
-                            ),
-                          ),
-                        );
-                      },
+                      onTap: () => _openSavedVerse(verse),
                       child: Padding(
                         padding: const EdgeInsets.all(16),
                         child: Column(
@@ -4719,6 +4763,7 @@ class _ChapterTextScreenState extends State<ChapterTextScreen> {
   }
 
   void _toggleVerseSelection(int verseNumber, String verseText) {
+    hapticVerseSelect();
     setState(() {
       if (_selectedVerses.containsKey(verseNumber)) {
         _selectedVerses.remove(verseNumber);
@@ -5894,6 +5939,7 @@ class _ChapterTextScreenWithHighlightState
   }
 
   void _toggleVerseSelection(int verseNumber, String verseText) {
+    hapticVerseSelect();
     setState(() {
       if (_selectedVerses.containsKey(verseNumber)) {
         _selectedVerses.remove(verseNumber);

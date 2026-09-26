@@ -69,7 +69,7 @@ class FirebaseMessagingService {
       }
     } catch (_) {}
 
-    if (Platform.isIOS) {
+    if (Platform.isIOS || Platform.isAndroid) {
       Future<void>.delayed(const Duration(seconds: 3), _registerDevice);
       Future<void>.delayed(const Duration(seconds: 10), _registerDevice);
     }
@@ -115,6 +115,11 @@ class FirebaseMessagingService {
       await _messaging
           .subscribeToTopic('all_users')
           .timeout(const Duration(seconds: 4));
+      if (Platform.isAndroid) {
+        await _messaging
+            .subscribeToTopic('android_users')
+            .timeout(const Duration(seconds: 4));
+      }
     } catch (_) {}
   }
 

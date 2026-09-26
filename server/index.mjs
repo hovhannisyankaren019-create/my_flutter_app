@@ -106,37 +106,168 @@ function parseVerseMessage(text) {
   return {reference: lines[0], text: lines.slice(1).join("\n")};
 }
 
-async function saveVerseOfDay({text, reference}) {
-  const verseText = String(text || "").trim();
-  const verseRef = String(reference || "").trim();
-  if (!verseText) {
-    throw new Error("empty_verse");
-  }
+const VERSE_TZ = "Asia/Yerevan";
+const VERSE_PUBLISH_HOUR = 9;
+
+function yerevanParts(date = new Date()) {
+  const fmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone: VERSE_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+  const parts = Object.fromEntries(
+    fmt.formatToParts(date).map((part) => [part.type, part.value]),
+  );
+  return {
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+    hour: Number(parts.hour),
+    minute: Number(parts.minute),
+  };
+}
+
+function nextVersePublishDate(date = new Date()) {
+  const now = yerevanParts(date);
+  if (now.hour < VERSE_PUBLISH_HOUR) return now.date;
+  const [year, month, day] = now.date.split("-").map(Number);
+  const next = new Date(Date.UTC(year, month - 1, day + 1, 12));
+  return yerevanParts(next).date;
+}
+
+function firestoreDocUrl(id) {
   const projectId = process.env.FIREBASE_PROJECT_ID || "spiritual-ai-414c4";
   const apiKey =
     process.env.FIREBASE_API_KEY || "AIzaSyAL59tEdRTRANUApl-BSDFu7l8FTIbq8UE";
-  const params = new URLSearchParams({
-    key: apiKey,
-    "updateMask.fieldPaths": "text",
-  });
-  params.append("updateMask.fieldPaths", "reference");
-  params.append("updateMask.fieldPaths", "updatedAt");
-  const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/verseOfDay/today?${params}`;
+  return `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/verseOfDay/${id}?key=${apiKey}`;
+}
+
+function verseFieldsFromDoc(data) {
+  const fields = data?.fields || {};
+  return {
+    text: fields.text?.stringValue || "",
+    reference: fields.reference?.stringValue || "",
+    publishDate: fields.publishDate?.stringValue || "",
+    publishedDate: fields.publishedDate?.stringValue || "",
+    published: fields.published?.booleanValue === true,
+  };
+}
+
+async function getVerseDoc(id) {
+  const res = await fetch(firestoreDocUrl(id));
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    throw new Error(await res.text());
+  }
+  return verseFieldsFromDoc(await res.json());
+}
+
+async function patchVerseDoc(id, fields, mask) {
+  const params = new URLSearchParams();
+  for (const path of mask) {
+    params.append("updateMask.fieldPaths", path);
+  }
+  const url = `${firestoreDocUrl(id)}&${params}`;
   const res = await fetch(url, {
     method: "PATCH",
     headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({
-      fields: {
-        text: {stringValue: verseText},
-        reference: {stringValue: verseRef},
-        updatedAt: {timestampValue: new Date().toISOString()},
-      },
-    }),
+    body: JSON.stringify({fields}),
   });
   if (!res.ok) {
     const detail = await res.text();
     throw new Error(detail || `firestore_${res.status}`);
   }
+}
+
+async function savePendingVerseOfDay({text, reference}) {
+  const verseText = String(text || "").trim();
+  const verseRef = String(reference || "").trim();
+  if (!verseText) {
+    throw new Error("empty_verse");
+  }
+  const publishDate = nextVersePublishDate();
+  await patchVerseDoc(
+    "pending",
+    {
+      text: {stringValue: verseText},
+      reference: {stringValue: verseRef},
+      publishDate: {stringValue: publishDate},
+      published: {booleanValue: false},
+      updatedAt: {timestampValue: new Date().toISOString()},
+    },
+    ["text", "reference", "publishDate", "published", "updatedAt"],
+  );
+  return publishDate;
+}
+
+async function saveLiveVerseOfDay({text, reference, publishedDate}) {
+  const verseText = String(text || "").trim();
+  const verseRef = String(reference || "").trim();
+  if (!verseText) {
+    throw new Error("empty_verse");
+  }
+  await patchVerseDoc(
+    "today",
+    {
+      text: {stringValue: verseText},
+      reference: {stringValue: verseRef},
+      publishedDate: {stringValue: publishedDate || yerevanParts().date},
+      updatedAt: {timestampValue: new Date().toISOString()},
+    },
+    ["text", "reference", "publishedDate", "updatedAt"],
+  );
+}
+
+let versePublishInFlight = false;
+
+async function publishDuePendingVerse() {
+  if (versePublishInFlight) return;
+  versePublishInFlight = true;
+  try {
+    const pending = await getVerseDoc("pending");
+    if (!pending?.text || pending.published) return;
+    const now = yerevanParts();
+    if (now.hour < VERSE_PUBLISH_HOUR) return;
+    const due = pending.publishDate || now.date;
+    if (due > now.date) return;
+    const live = await getVerseDoc("today");
+    if (
+      live?.publishedDate === due &&
+      live.text === pending.text &&
+      live.reference === pending.reference
+    ) {
+      await patchVerseDoc(
+        "pending",
+        {published: {booleanValue: true}},
+        ["published"],
+      );
+      return;
+    }
+    await saveLiveVerseOfDay({
+      text: pending.text,
+      reference: pending.reference,
+      publishedDate: due,
+    });
+    await patchVerseDoc(
+      "pending",
+      {published: {booleanValue: true}},
+      ["published"],
+    );
+    await sendVerseNotification({
+      text: pending.text,
+      reference: pending.reference,
+    });
+  } finally {
+    versePublishInFlight = false;
+  }
+}
+
+function maybePublishVerse() {
+  publishDuePendingVerse().catch((error) => {
+    console.error("Verse publish failed", error);
+  });
 }
 
 function b64url(value) {
@@ -521,7 +652,15 @@ async function sendApnsAlertWithFallback(args) {
   throw lastError || new Error("apns_failed");
 }
 
-const ANDROID_VERSE_PUSH = false;
+const ANDROID_VERSE_PUSH = true;
+
+function isIosDevice(device) {
+  return device.platform === "ios" || isApnsDeviceToken(device.apnsToken);
+}
+
+function isAndroidDevice(device) {
+  return device.platform === "android" || (!isIosDevice(device) && !!device.token);
+}
 
 async function sendVerseNotification({text, reference}) {
   const title = "Օրվա խոսք";
@@ -535,25 +674,44 @@ async function sendVerseNotification({text, reference}) {
     const accessToken = await firebaseMessagingToken(sa);
     let sent = 0;
     const errors = [];
-    if (ANDROID_VERSE_PUSH) {
-      try {
-        await sendFcmV1(accessToken, projectId, {
-          topic: "all_users",
-          ...payload,
-        });
-        sent += 1;
-      } catch (error) {
-        errors.push(String(error.message || error));
-      }
-    }
-
     const devices = await listPushDevices();
     const seenApns = new Set();
     const seenIosFcm = new Set();
+    const seenAndroidFcm = new Set();
     let iosSent = 0;
+    let androidSent = 0;
+
     for (const device of devices) {
-      const ios =
-        device.platform === "ios" || isApnsDeviceToken(device.apnsToken);
+      if (!isAndroidDevice(device) || !device.token) continue;
+      if (seenAndroidFcm.has(device.token)) continue;
+      seenAndroidFcm.add(device.token);
+      try {
+        await sendFcmV1(accessToken, projectId, {
+          token: device.token,
+          ...payload,
+        });
+        sent += 1;
+        androidSent += 1;
+      } catch (error) {
+        errors.push(shortPushError(error));
+      }
+    }
+
+    if (androidSent === 0) {
+      try {
+        await sendFcmV1(accessToken, projectId, {
+          topic: "android_users",
+          ...payload,
+        });
+        sent += 1;
+        androidSent += 1;
+      } catch (error) {
+        errors.push(shortPushError(error));
+      }
+    }
+
+    for (const device of devices) {
+      const ios = isIosDevice(device);
       const apnsToken = isApnsDeviceToken(device.apnsToken)
         ? device.apnsToken
         : "";
@@ -588,6 +746,9 @@ async function sendVerseNotification({text, reference}) {
       }
     }
 
+    if (androidSent > 0 && iosSent > 0) return "fcm_all";
+    if (androidSent > 0) return "fcm_android";
+
     if (sent === 0) {
       if (
         errors.some(
@@ -597,7 +758,7 @@ async function sendVerseNotification({text, reference}) {
       ) {
         return "fcm_no_ios_key";
       }
-      if (seenApns.size === 0 && seenIosFcm.size === 0) {
+      if (seenApns.size === 0 && seenIosFcm.size === 0 && seenAndroidFcm.size === 0) {
         return "fcm_no_ios_device";
       }
       return `fcm_no_ios:${[...new Set(errors)].slice(0, 2).join(" | ") || "apple"}`;
@@ -1394,51 +1555,15 @@ async function handleTelegram(req, res, body) {
       return;
     }
     try {
-      await saveVerseOfDay(parsed);
-      let pushNote = "";
-      try {
-        const pushResult = await sendVerseNotification(parsed);
-        if (pushResult === "fcm_no_ios_key") {
-          pushNote =
-            " iPhone-ին չգնաց. Render-ում APNS_KEY_P8-ը սխալ ֆորմատով է։ Android-ը ժամանակավոր անջատված է։";
-        } else if (pushResult === "fcm_no_ios_device") {
-          pushNote =
-            " iPhone-ին չգնաց. TestFlight հավելվածը մեկ անգամ բացեք և թույլ տվեք ծանուցումները։ Android-ը ժամանակավոր անջատված է։";
-        } else if (String(pushResult).startsWith("fcm_no_ios")) {
-          const reason = String(pushResult).slice("fcm_no_ios:".length);
-          if (
-            reason.includes("Invalid APNs credential") ||
-            reason.includes("UNAUTHENTICATED") ||
-            reason.includes("THIRD_PARTY_AUTH") ||
-            reason.includes("Auth error from APNS")
-          ) {
-            pushNote =
-              " iPhone FCM չանցավ. Firebase-ում Apple բանալի չկա։ Console → Project settings → Cloud Messaging → Apple app → APNs Authentication Key։ Բարձրացրու AuthKey_C5…2X.p8, Key ID-ն ու Team ID-ն։ FIREBASE_SERVICE_ACCOUNT-ը մի՛ փոխիր։";
-          } else if (reason.includes("InvalidProviderToken")) {
-            pushNote =
-              ` iPhone չգնաց. Production Key ID-ն ու .p8-ը իրար չեն պատկանում։ Downloads-ում բացիր այն AuthKey ֆայլը, որի անունը համընկնում է KEY_ID-ի հետ (C5…2X), և նորից դրիր APNS_KEY_P8։ ${reason}`;
-          } else if (reason.includes("BadEnvironmentKeyInToken")) {
-            pushNote =
-              ` iPhone չգնաց. Այս Key-ը Sandbox է, TestFlight-ը Production է։ ${reason}`;
-          } else {
-            pushNote = ` iPhone ծանուցումը չանցավ։ ${reason}`;
-          }
-        } else {
-          pushNote =
-            " iPhone-ին ուղարկվեց։ Android-ը ժամանակավոր անջատված է։";
-        }
-      } catch (pushError) {
-        console.error(pushError);
-        pushNote =
-          pushError.message === "no_push_key"
-            ? " Խոսքը պահվեց, բայց notification չգնաց. Render-ում դրեք FIREBASE_SERVICE_ACCOUNT։"
-            : " Խոսքը պահվեց, բայց notification չգնաց։";
-      }
+      const publishDate = await savePendingVerseOfDay(parsed);
+      const today = yerevanParts().date;
+      const when =
+        publishDate === today ? "այսօր 09:00-ին" : "վաղը 09:00-ին";
       await sendTelegram(
         chatId,
         parsed.reference
-          ? `Օրվա Խոսքը թարմացվեց։\n${parsed.reference}\n${pushNote}`.trim()
-          : `Օրվա Խոսքը թարմացվեց։\n${pushNote}`.trim(),
+          ? `Օրվա Խոսքը պահվեց։ Կհայտնվի ${when}։\n${parsed.reference}`
+          : `Օրվա Խոսքը պահվեց։ Կհայտնվի ${when}։`,
         {silent: true},
       );
     } catch (error) {
@@ -1655,6 +1780,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === "GET") {
+    maybePublishVerse();
     json(res, 200, {ok: true, service: "spiritual-ai"});
     return;
   }
@@ -1673,6 +1799,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (pathname === "/telegram") {
+    maybePublishVerse();
     await handleTelegram(req, res, body);
     return;
   }
@@ -1706,4 +1833,6 @@ server.listen(PORT, "0.0.0.0", () => {
   registerTelegramWebhook().catch((error) => {
     console.error("Telegram webhook setup failed", error);
   });
+  maybePublishVerse();
+  setInterval(maybePublishVerse, 60 * 1000);
 });
