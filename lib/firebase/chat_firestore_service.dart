@@ -17,6 +17,7 @@ class ChatFirestoreService {
 
   Future<String> createChat({
     String title = 'Նոր զրույց',
+    String? assistant,
   }) async {
     final chatRef = await _firestore
         .collection('users')
@@ -24,6 +25,7 @@ class ChatFirestoreService {
         .collection('chats')
         .add({
       'title': title,
+      if (assistant != null) 'assistant': assistant,
       'createdAt': FieldValue.serverTimestamp(),
       'expiresAt': Timestamp.fromDate(
         DateTime.now().add(const Duration(days: 15)),
@@ -116,6 +118,16 @@ class ChatFirestoreService {
           ? null
           : Timestamp.fromDate(DateTime.now().add(const Duration(days: 15))),
     });
+  }
+
+  Future<String?> chatAssistant(String chatId) async {
+    final doc = await _firestore
+        .collection('users')
+        .doc(_uid)
+        .collection('chats')
+        .doc(chatId)
+        .get();
+    return doc.data()?['assistant'] as String?;
   }
 
   Stream<QuerySnapshot<Map<String, dynamic>>> streamChats() {

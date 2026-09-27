@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -43,6 +46,102 @@ class _ChatItem {
   });
 }
 
+class _AiMemory {
+  static const _key = 'ai_threads_v1';
+  static const selectedKey = 'selected_ai_assistant';
+  static final threads = <String, List<_ChatItem>>{};
+  static final chatIds = <String, String>{};
+  static String selectedId = AiAssistantCatalog.chatgpt.id;
+  static var loaded = false;
+
+  static Future<void> load() async {
+    if (loaded) return;
+    final prefs = await SharedPreferences.getInstance();
+    selectedId = AiAssistantCatalog.find(prefs.getString(selectedKey))?.id ??
+        AiAssistantCatalog.chatgpt.id;
+    final raw = prefs.getString(_key);
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map) {
+          for (final item in AiAssistantCatalog.all) {
+            final row = decoded[item.id];
+            if (row is! Map) continue;
+            final chatId = row['chatId'];
+            if (chatId is String && chatId.isNotEmpty) {
+              chatIds[item.id] = chatId;
+            }
+            final messages = row['messages'];
+            if (messages is! List) continue;
+            threads[item.id] = [
+              for (final message in messages)
+                if (message is Map) _itemFrom(message),
+            ];
+          }
+        }
+      } catch (_) {}
+    }
+    loaded = true;
+  }
+
+  static Future<void> persist() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(selectedKey, selectedId);
+    final encoded = <String, dynamic>{
+      for (final item in AiAssistantCatalog.all)
+        item.id: {
+          if (chatIds[item.id] != null) 'chatId': chatIds[item.id],
+          'messages': [
+            for (final message in (threads[item.id] ?? const <_ChatItem>[]))
+              _itemJson(message),
+          ],
+        },
+    };
+    await prefs.setString(_key, jsonEncode(encoded));
+  }
+}
+
+Map<String, dynamic> _itemJson(_ChatItem item) {
+  final text = item.text.trim();
+  return {
+    'role': item.role,
+    'text': text.length > 4000 ? text.substring(0, 4000) : text,
+    if (item.passages.isNotEmpty)
+      'passages': [
+        for (final passage in item.passages.take(6))
+          {
+            'book': passage.book,
+            'chapter': passage.chapter,
+            'verse': passage.verse,
+          },
+      ],
+  };
+}
+
+_ChatItem _itemFrom(Map message) {
+  final passages = <BiblePassage>[];
+  final raw = message['passages'];
+  if (raw is List) {
+    for (final passage in raw) {
+      if (passage is! Map || passage['book'] is! String) continue;
+      passages.add(
+        BiblePassage(
+          book: passage['book'] as String,
+          chapter: (passage['chapter'] as num?)?.toInt() ?? 1,
+          verse: (passage['verse'] as num?)?.toInt() ?? 1,
+          text: '',
+        ),
+      );
+    }
+  }
+  final text = message['text'];
+  return _ChatItem(
+    role: message['role'] == 'user' ? 'user' : 'assistant',
+    text: text is String ? text : '',
+    passages: passages,
+  );
+}
+
 final FirebaseAuthService _authService = FirebaseAuthService();
 
 class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
@@ -57,6 +156,7 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
   ChatFirestoreService? _chatFirestoreService;
   String? _chatId;
   String _assistantId = AiAssistantCatalog.chatgpt.id;
+  bool _keepLocalThread = true;
 
   bool get _canChoose => !_isGuest;
 
@@ -73,16 +173,42 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
     _chatId = widget.chatId;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (_canChoose) {
-        final prefs = await SharedPreferences.getInstance();
-        final saved = AiAssistantCatalog.find(
-          prefs.getString('selected_ai_assistant'),
-        );
-        if (saved != null && mounted) {
-          _assistantId = saved.id;
-        }
+        await _AiMemory.load();
+        if (!mounted) return;
+        _assistantId = _AiMemory.selectedId;
+        _threads
+          ..clear()
+          ..addAll({
+            for (final item in AiAssistantCatalog.all)
+              item.id: List<_ChatItem>.of(
+                _AiMemory.threads[item.id] ?? const [],
+              ),
+          });
+        _chatId = widget.chatId ?? _AiMemory.chatIds[_assistantId];
+        _messages
+          ..clear()
+          ..addAll(_threads[_assistantId] ?? const []);
       }
-      if (_chatId != null) {
+      if (widget.chatId != null) {
+        var tagged = false;
+        if (_canChoose) {
+          final assistant = AiAssistantCatalog.find(
+            await _chats.chatAssistant(widget.chatId!),
+          );
+          if (assistant != null && mounted) {
+            tagged = true;
+            _stash();
+            _assistantId = assistant.id;
+            _AiMemory.selectedId = assistant.id;
+          }
+        }
+        _keepLocalThread = tagged;
+        _chatId = widget.chatId;
         await _loadChatMessages();
+        if (_canChoose && tagged) {
+          _stash();
+          unawaited(_AiMemory.persist());
+        }
       }
       if (mounted) setState(() => _indexReady = true);
       final question = widget.initialQuestion?.trim();
@@ -94,9 +220,28 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
 
   @override
   void dispose() {
+    if (_canChoose && _keepLocalThread) {
+      _stash();
+      unawaited(_AiMemory.persist());
+    }
     _controller.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _stash() {
+    final kept = _messages.length > 24
+        ? _messages.sublist(_messages.length - 24)
+        : List<_ChatItem>.of(_messages);
+    _threads[_assistantId] = kept;
+    _AiMemory.threads[_assistantId] = List<_ChatItem>.of(kept);
+    final chatId = _chatId;
+    if (chatId == null || chatId.isEmpty) {
+      _AiMemory.chatIds.remove(_assistantId);
+    } else {
+      _AiMemory.chatIds[_assistantId] = chatId;
+    }
+    _AiMemory.selectedId = _assistantId;
   }
 
   Future<void> _send([String? preset]) async {
@@ -108,6 +253,7 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
       try {
         final chatId = await _chats.createChat(
           title: text.length > 40 ? '${text.substring(0, 40)}...' : text,
+          assistant: _assistantId,
         );
         _chatId = chatId;
       } catch (_) {
@@ -226,6 +372,11 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
         );
       });
     } finally {
+      _keepLocalThread = true;
+      if (_canChoose) {
+        _stash();
+        unawaited(_AiMemory.persist());
+      }
       if (mounted) {
         setState(() => _sending = false);
         _scrollToEnd();
@@ -334,27 +485,33 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
     if (_sending) return;
     FocusScope.of(context).unfocus();
     _controller.clear();
+    _keepLocalThread = true;
     setState(() {
       _chatId = null;
       _messages.clear();
       _threads[_assistantId] = const [];
     });
+    if (_canChoose) {
+      _stash();
+      unawaited(_AiMemory.persist());
+    }
   }
 
   Future<void> _selectAssistant(AiAssistant next) async {
     if (_sending || next.id == _assistantId) return;
     HapticFeedback.selectionClick();
-    _threads[_assistantId] = List<_ChatItem>.of(_messages);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('selected_ai_assistant', next.id);
+    if (_keepLocalThread) _stash();
+    _keepLocalThread = true;
     if (!mounted) return;
     setState(() {
       _assistantId = next.id;
-      _chatId = null;
+      _chatId = _AiMemory.chatIds[next.id];
       _messages
         ..clear()
-        ..addAll(_threads[next.id] ?? const []);
+        ..addAll(_threads[next.id] ?? _AiMemory.threads[next.id] ?? const []);
     });
+    _stash();
+    unawaited(_AiMemory.persist());
     _scrollToEnd();
   }
 
@@ -457,7 +614,7 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
       appBar: AppBar(
         backgroundColor: AppColors.bg(isDark),
         title: Text(
-          'ԱԲ',
+          _canChoose && _indexReady ? _assistant.name : 'ԱԲ',
           style: TextStyle(
             fontSize: 28,
             fontWeight: FontWeight.w600,
@@ -539,9 +696,15 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
                 ),
               ),
             ),
-          if (_canChoose) _assistantPicker(isDark),
+          if (_canChoose && _indexReady) _assistantPicker(isDark),
           Expanded(
-            child: _messages.isEmpty && !_sending
+            child: !_indexReady
+                ? Center(
+                    child: CircularProgressIndicator(
+                      color: isDark ? AppColors.cream : AppColors.forest,
+                    ),
+                  )
+                : _messages.isEmpty && !_sending
                 ? Center(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 32),

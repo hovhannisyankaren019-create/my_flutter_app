@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../main.dart';
+import '../spiritual_ai/ai_assistants.dart';
 import '../spiritual_ai/spiritual_ai_screen.dart';
 import 'chat_firestore_service.dart';
 
@@ -95,6 +96,8 @@ class _ChatHistoryScreenState extends State<ChatHistoryScreen> {
 
               final title = data['title'] as String? ?? 'Նոր զրույց';
               final pinned = data['pinned'] as bool? ?? false;
+              final assistantName =
+                  AiAssistantCatalog.find(data['assistant'] as String?)?.name;
 
               return Container(
                 margin: const EdgeInsets.only(bottom: 8),
@@ -119,6 +122,12 @@ class _ChatHistoryScreenState extends State<ChatHistoryScreen> {
                       fontWeight: FontWeight.w600,
                     ),
                   ),
+                  subtitle: assistantName == null
+                      ? null
+                      : Text(
+                          assistantName,
+                          style: TextStyle(color: AppColors.muted(isDark)),
+                        ),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
