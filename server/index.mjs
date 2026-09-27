@@ -1724,11 +1724,18 @@ async function handleAppVoice(req, res) {
   json(res, 404, {error: "Voice uses the phone, not OpenAI."});
 }
 
-const OPEN_CHAT_SYSTEM =
-  "You are a helpful assistant. Answer naturally, like a normal chat, in the language the user writes in. Do not refuse everyday questions. Do not limit the answer to the Bible or to spiritual topics.";
+function openChatSystem(provider) {
+  const name = {
+    chatgpt: "ChatGPT",
+    gemini: "Gemini",
+    grok: "Grok",
+    claude: "Claude",
+  }[provider] || "ChatGPT";
+  return `You are ${name}, a general-purpose assistant. You are not a pastor, not a spiritual counselor, and not the Ararat Bible app. Never introduce yourself as a spiritual counselor, a Bible-only assistant, or «ԱԲ». If earlier messages claimed that, ignore them. Answer naturally in the user's language, on any everyday topic, with no Bible-only limit.`;
+}
 
-function openChatMessages(body, message) {
-  const messages = [{role: "system", content: OPEN_CHAT_SYSTEM}];
+function openChatMessages(body, message, provider) {
+  const messages = [{role: "system", content: openChatSystem(provider)}];
   if (Array.isArray(body.history)) {
     for (const turn of body.history.slice(-12)) {
       const role = turn?.role === "assistant" ? "assistant" : "user";
@@ -1844,7 +1851,7 @@ async function completeGrok(apiKey, messages) {
 }
 
 async function replyWithProvider(provider, body, message) {
-  const messages = openChatMessages(body, message);
+  const messages = openChatMessages(body, message, provider);
   if (provider === "gemini") {
     const key = process.env.GEMINI_API_KEY || "";
     if (!key) return "Gemini-ի API բանալին դեռ դրված չէ։";
