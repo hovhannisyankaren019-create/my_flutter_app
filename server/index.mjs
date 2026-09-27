@@ -1795,6 +1795,8 @@ async function completeGemini(apiKey, messages) {
   const models = [
     process.env.GEMINI_CHAT_MODEL,
     "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+    "gemini-2.0-flash",
     "gemini-flash-latest",
   ].filter(Boolean);
   let lastError = null;
@@ -1822,7 +1824,12 @@ async function completeGemini(apiKey, messages) {
       lastError = new Error("upstream");
       lastError.status = res.status;
       lastError.detail = raw.slice(0, 500);
-      if (res.status === 404) continue;
+      const busy = res.status === 404 ||
+        res.status === 429 ||
+        res.status === 500 ||
+        res.status === 503 ||
+        /high demand|unavailable|resource_exhausted|overloaded/i.test(raw);
+      if (busy) continue;
       break;
     }
     const data = JSON.parse(raw);
