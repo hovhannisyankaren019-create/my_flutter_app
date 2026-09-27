@@ -157,6 +157,8 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
   String? _chatId;
   String _assistantId = AiAssistantCatalog.chatgpt.id;
   bool _keepLocalThread = true;
+  String? _historyChatId;
+  String? _historyAssistantId;
 
   bool get _canChoose => !_isGuest;
 
@@ -184,10 +186,12 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
                 _AiMemory.threads[item.id] ?? const [],
               ),
           });
-        _chatId = widget.chatId ?? _AiMemory.chatIds[_assistantId];
-        _messages
-          ..clear()
-          ..addAll(_threads[_assistantId] ?? const []);
+        if (widget.chatId == null) {
+          _chatId = _AiMemory.chatIds[_assistantId];
+          _messages
+            ..clear()
+            ..addAll(_threads[_assistantId] ?? const []);
+        }
       }
       if (widget.chatId != null) {
         var tagged = false;
@@ -197,17 +201,21 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
           );
           if (assistant != null && mounted) {
             tagged = true;
-            _stash();
             _assistantId = assistant.id;
             _AiMemory.selectedId = assistant.id;
           }
         }
+        _historyChatId = widget.chatId;
+        _historyAssistantId = _canChoose ? _assistantId : null;
         _keepLocalThread = tagged;
         _chatId = widget.chatId;
         await _loadChatMessages();
-        if (_canChoose && tagged) {
-          _stash();
-          unawaited(_AiMemory.persist());
+        if (_canChoose && _historyAssistantId != null) {
+          _releaseHistoryChatFromOthers();
+          if (tagged) {
+            _stash();
+            unawaited(_AiMemory.persist());
+          }
         }
       }
       if (mounted) setState(() => _indexReady = true);
@@ -229,13 +237,41 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
     super.dispose();
   }
 
+  void _releaseHistoryChatFromOthers() {
+    final historyChatId = _historyChatId;
+    final ownerId = _historyAssistantId;
+    if (historyChatId == null || ownerId == null) return;
+    for (final item in AiAssistantCatalog.all) {
+      if (item.id == ownerId) continue;
+      if (_AiMemory.chatIds[item.id] == historyChatId) {
+        _AiMemory.chatIds.remove(item.id);
+      }
+    }
+  }
+
+  String? _chatIdForAssistant(String assistantId) {
+    final stored = _AiMemory.chatIds[assistantId];
+    if (_historyChatId != null &&
+        stored == _historyChatId &&
+        assistantId != _historyAssistantId) {
+      _AiMemory.chatIds.remove(assistantId);
+      return null;
+    }
+    return stored;
+  }
+
   void _stash() {
     final kept = _messages.length > 24
         ? _messages.sublist(_messages.length - 24)
         : List<_ChatItem>.of(_messages);
     _threads[_assistantId] = kept;
     _AiMemory.threads[_assistantId] = List<_ChatItem>.of(kept);
-    final chatId = _chatId;
+    var chatId = _chatId;
+    if (_historyChatId != null &&
+        chatId == _historyChatId &&
+        _assistantId != _historyAssistantId) {
+      chatId = null;
+    }
     if (chatId == null || chatId.isEmpty) {
       _AiMemory.chatIds.remove(_assistantId);
     } else {
@@ -248,6 +284,12 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
     if (_sending) return;
     final text = (preset ?? _controller.text).trim();
     if (text.isEmpty) return;
+
+    if (_historyChatId != null &&
+        _chatId == _historyChatId &&
+        _assistantId != _historyAssistantId) {
+      _chatId = _chatIdForAssistant(_assistantId);
+    }
 
     if (!_isGuest && _chatId == null) {
       try {
@@ -505,7 +547,7 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
     if (!mounted) return;
     setState(() {
       _assistantId = next.id;
-      _chatId = _AiMemory.chatIds[next.id];
+      _chatId = _chatIdForAssistant(next.id);
       _messages
         ..clear()
         ..addAll(_threads[next.id] ?? _AiMemory.threads[next.id] ?? const []);
