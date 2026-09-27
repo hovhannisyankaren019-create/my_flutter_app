@@ -349,19 +349,6 @@ class _AuthScreenState extends State<AuthScreen> {
                   ),
                 ),
               ),
-              TextButton.icon(
-                onPressed: _isLoading
-                    ? null
-                    : () => _openAi(guest: true),
-                icon: Icon(
-                  Icons.person_outline,
-                  color: AppColors.muted(isDark),
-                ),
-                label: Text(
-                  'Մտնել որպես հյուր',
-                  style: TextStyle(color: AppColors.muted(isDark)),
-                ),
-              ),
             ],
           ),
         ),

@@ -2,19 +2,22 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../firebase/auth_screen.dart';
+import '../firebase/firebase_auth_service.dart';
 import '../main.dart';
 import 'spiritual_ai_screen.dart';
 
 class SpiritualAiFab extends StatelessWidget {
   const SpiritualAiFab({super.key});
 
-  void _openSpiritualAi(BuildContext context) {
+  Future<void> _openSpiritualAi(BuildContext context) async {
     User? user;
     try {
-      user = FirebaseAuth.instance.currentUser;
+      user = await FirebaseAuthService.ensureRestored();
+      user ??= FirebaseAuth.instance.currentUser;
     } catch (_) {
       user = null;
     }
+    if (!context.mounted) return;
 
     if (user == null) {
       Navigator.push(

@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../firebase/chat_firestore_service.dart';
 import '../firebase/chat_history_screen.dart';
 import '../firebase/firebase_auth_service.dart';
 import '../main.dart';
+import 'ai_assistants.dart';
 import 'bible_context.dart';
 import 'spiritual_ai_config.dart';
 import 'spiritual_ai_service.dart';
@@ -49,10 +51,17 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
   final _scrollController = ScrollController();
   final _service = SpiritualAiService();
   final _messages = <_ChatItem>[];
+  final _threads = <String, List<_ChatItem>>{};
   bool _sending = false;
   bool _indexReady = false;
   ChatFirestoreService? _chatFirestoreService;
   String? _chatId;
+  String _assistantId = AiAssistantCatalog.chatgpt.id;
+
+  bool get _canChoose => !_isGuest;
+
+  AiAssistant get _assistant =>
+      AiAssistantCatalog.find(_assistantId) ?? AiAssistantCatalog.chatgpt;
 
   ChatFirestoreService get _chats {
     return _chatFirestoreService ??= ChatFirestoreService();
@@ -63,6 +72,15 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
     super.initState();
     _chatId = widget.chatId;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (_canChoose) {
+        final prefs = await SharedPreferences.getInstance();
+        final saved = AiAssistantCatalog.find(
+          prefs.getString('selected_ai_assistant'),
+        );
+        if (saved != null && mounted) {
+          _assistantId = saved.id;
+        }
+      }
       if (_chatId != null) {
         await _loadChatMessages();
       }
@@ -114,9 +132,19 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
     _scrollToEnd();
 
     try {
+      final previous = _messages.sublist(0, _messages.length - 1);
+      const openChat = true;
+      late final bool followUp;
+      late final String searchQuery;
+      late final List<Map<String, String>> history;
+      var askText = text;
+      if (openChat) {
+        followUp = previous.any((item) => item.role == 'assistant');
+        searchQuery = text;
+        history = _apiHistory(previous, followUp: true, openChat: true);
+      } else {
       final retriever = BibleContextRetriever.instance;
       await retriever.ensureReady();
-      final previous = _messages.sublist(0, _messages.length - 1);
       var lastUserText = '';
       for (final item in previous.reversed) {
         if (item.role == 'user') {
@@ -125,7 +153,7 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
         }
       }
       final verseFollow = retriever.looksLikeVerseFollowUp(text);
-      final followUp = verseFollow ||
+      followUp = verseFollow ||
           retriever.looksLikeFollowUp(
             text,
             hasPriorTurn: previous.any((item) => item.role == 'assistant'),
@@ -143,16 +171,16 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
         });
         return;
       }
-      final searchQuery = verseFollow ? _searchContext(text, previous) : text;
-      final history = _apiHistory(
+      searchQuery = verseFollow ? _searchContext(text, previous) : text;
+      history = _apiHistory(
         previous,
         followUp: followUp,
       );
 
-      var askText = text;
       if (wantsHistory) {
         askText =
             '$text\n\n(Համակարգ. տուր լիարժեք հոգևոր պատասխան տարբեր աղբյուրներով՝ Աստվածաշունչ, մեկնություններ, Սուրբ Հայրեր և այլ հոգևոր գրքեր։ Կարճ մի գրիր։)';
+      }
       }
 
       final reply = await _service.ask(
@@ -160,6 +188,7 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
         history: history,
         followUp: followUp,
         searchQuery: searchQuery,
+        assistant: _canChoose ? _assistantId : 'chatgpt',
       );
       if (!mounted) return;
       final body = reply.text.trim();
@@ -207,6 +236,7 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
   List<Map<String, String>> _apiHistory(
     List<_ChatItem> previous, {
     required bool followUp,
+    bool openChat = false,
   }) {
     final usable = <_ChatItem>[];
     for (var i = 0; i < previous.length; i++) {
@@ -223,17 +253,19 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
       }
       usable.add(item);
     }
+    final cap = openChat ? 4000 : 1200;
+    final maxTurns = openChat ? 12 : 6;
     final turns = <Map<String, String>>[
       for (final item in usable)
         if (item.text.trim().isNotEmpty)
           {
             'role': item.role,
-            'content': item.text.trim().length > 1200
-                ? item.text.trim().substring(0, 1200)
+            'content': item.text.trim().length > cap
+                ? item.text.trim().substring(0, cap)
                 : item.text.trim(),
           },
     ];
-    final start = turns.length > 6 ? turns.length - 6 : 0;
+    final start = turns.length > maxTurns ? turns.length - maxTurns : 0;
     return turns.sublist(start);
   }
 
@@ -305,7 +337,113 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
     setState(() {
       _chatId = null;
       _messages.clear();
+      _threads[_assistantId] = const [];
     });
+  }
+
+  Future<void> _selectAssistant(AiAssistant next) async {
+    if (_sending || next.id == _assistantId) return;
+    HapticFeedback.selectionClick();
+    _threads[_assistantId] = List<_ChatItem>.of(_messages);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('selected_ai_assistant', next.id);
+    if (!mounted) return;
+    setState(() {
+      _assistantId = next.id;
+      _chatId = null;
+      _messages
+        ..clear()
+        ..addAll(_threads[next.id] ?? const []);
+    });
+    _scrollToEnd();
+  }
+
+  Widget _assistantPicker(bool isDark) {
+    final selected = _assistant;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 2, 12, 8),
+      child: Row(
+        children: [
+          for (final item in AiAssistantCatalog.all)
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(18),
+                    onTap: _sending ? null : () => _selectAssistant(item),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
+                      decoration: BoxDecoration(
+                        color: item.id == selected.id
+                            ? (isDark
+                                ? AppColors.darkForest
+                                : AppColors.cream)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(
+                          color: item.id == selected.id
+                              ? item.color
+                              : Colors.transparent,
+                          width: 1.6,
+                        ),
+                        boxShadow: item.id == selected.id
+                            ? [
+                                BoxShadow(
+                                  color: item.color.withValues(alpha: 0.18),
+                                  blurRadius: 12,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ]
+                            : null,
+                      ),
+                      child: Column(
+                        children: [
+                          Container(
+                            width: 46,
+                            height: 46,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: isDark
+                                  ? const Color(0xFFF4F1E8)
+                                  : Colors.white,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: item.id == selected.id
+                                    ? item.color.withValues(alpha: 0.35)
+                                    : AppColors.muted(isDark)
+                                        .withValues(alpha: 0.25),
+                              ),
+                            ),
+                            child: item.logo,
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            item.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: item.id == selected.id
+                                  ? FontWeight.w700
+                                  : FontWeight.w500,
+                              color: item.id == selected.id
+                                  ? AppColors.text(isDark)
+                                  : AppColors.muted(isDark),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -401,6 +539,7 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
                 ),
               ),
             ),
+          if (_canChoose) _assistantPicker(isDark),
           Expanded(
             child: _messages.isEmpty && !_sending
                 ? Center(
@@ -409,14 +548,24 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(
-                            Icons.auto_awesome,
-                            size: 42,
-                            color: isDark ? AppColors.darkOlive : AppColors.olive,
-                          ),
+                          _canChoose
+                              ? SizedBox(
+                                  width: 42,
+                                  height: 42,
+                                  child: FittedBox(child: _assistant.logo),
+                                )
+                              : Icon(
+                                  Icons.auto_awesome,
+                                  size: 42,
+                                  color: isDark
+                                      ? AppColors.darkOlive
+                                      : AppColors.olive,
+                                ),
                           const SizedBox(height: 14),
                           Text(
-                            'Հարցրեք Աստվածաշնչի մասին',
+                            _canChoose
+                                ? _assistant.hint
+                                : 'Հարցրեք Աստվածաշնչի մասին',
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               fontSize: 18,
