@@ -18,6 +18,10 @@ services:
         sync: false
       - key: GEMINI_API_KEY
         sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: XAI_API_KEY
+        sync: false
       - key: IMAGE_PROVIDER
         value: pollinations
       - key: FIREBASE_PROJECT_ID

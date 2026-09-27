@@ -1724,6 +1724,141 @@ async function handleAppVoice(req, res) {
   json(res, 404, {error: "Voice uses the phone, not OpenAI."});
 }
 
+const OPEN_CHAT_SYSTEM =
+  "You are a helpful assistant. Answer naturally, like a normal chat, in the language the user writes in. Do not refuse everyday questions.";
+
+function openChatMessages(body, message) {
+  const messages = [{role: "system", content: OPEN_CHAT_SYSTEM}];
+  if (Array.isArray(body.history)) {
+    for (const turn of body.history.slice(-12)) {
+      const role = turn?.role === "assistant" ? "assistant" : "user";
+      const content = asString(turn?.content, 4000);
+      if (!content) continue;
+      messages.push({role, content});
+    }
+  }
+  messages.push({role: "user", content: message});
+  return messages;
+}
+
+async function completeGemini(apiKey, messages) {
+  const model = process.env.GEMINI_CHAT_MODEL || "gemini-2.5-flash";
+  const system = messages.find((item) => item.role === "system")?.content || "";
+  const contents = messages
+    .filter((item) => item.role !== "system")
+    .map((item) => ({
+      role: item.role === "assistant" ? "model" : "user",
+      parts: [{text: item.content}],
+    }));
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`,
+    {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        systemInstruction: system ? {parts: [{text: system}]} : undefined,
+        contents,
+        generationConfig: {temperature: 0.7, maxOutputTokens: 4096},
+      }),
+    },
+  );
+  if (!res.ok) {
+    const errText = await res.text();
+    console.error("Gemini error", res.status, errText.slice(0, 500));
+    throw new Error("upstream");
+  }
+  const data = await res.json();
+  const parts = data?.candidates?.[0]?.content?.parts || [];
+  const reply = parts.map((part) => part?.text || "").join("").trim();
+  if (!reply) throw new Error("empty");
+  return reply;
+}
+
+async function completeClaude(apiKey, messages) {
+  const model = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-5";
+  const system = messages.find((item) => item.role === "system")?.content || "";
+  const chat = messages
+    .filter((item) => item.role !== "system")
+    .map((item) => ({
+      role: item.role === "assistant" ? "assistant" : "user",
+      content: item.content,
+    }));
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: 4096,
+      temperature: 0.7,
+      system,
+      messages: chat,
+    }),
+  });
+  if (!res.ok) {
+    const errText = await res.text();
+    console.error("Claude error", res.status, errText.slice(0, 500));
+    throw new Error("upstream");
+  }
+  const data = await res.json();
+  const reply = (data?.content || [])
+    .map((part) => part?.text || "")
+    .join("")
+    .trim();
+  if (!reply) throw new Error("empty");
+  return reply;
+}
+
+async function completeGrok(apiKey, messages) {
+  const res = await fetch("https://api.x.ai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: process.env.XAI_MODEL || "grok-3",
+      temperature: 0.7,
+      max_tokens: 4096,
+      messages,
+    }),
+  });
+  if (!res.ok) {
+    const errText = await res.text();
+    console.error("Grok error", res.status, errText.slice(0, 500));
+    throw new Error("upstream");
+  }
+  const data = await res.json();
+  const reply = data.choices?.[0]?.message?.content?.trim() || "";
+  if (!reply) throw new Error("empty");
+  return reply;
+}
+
+async function replyWithProvider(provider, body, message) {
+  const messages = openChatMessages(body, message);
+  if (provider === "gemini") {
+    const key = process.env.GEMINI_API_KEY || "";
+    if (!key) return "Gemini-ի API բանալին դեռ դրված չէ։";
+    return completeGemini(key, messages);
+  }
+  if (provider === "claude") {
+    const key = process.env.ANTHROPIC_API_KEY || "";
+    if (!key) return "Claude-ի API բանալին դեռ դրված չէ։";
+    return completeClaude(key, messages);
+  }
+  if (provider === "grok") {
+    const key = process.env.XAI_API_KEY || "";
+    if (!key) return "Grok-ի API բանալին դեռ դրված չէ։";
+    return completeGrok(key, messages);
+  }
+  const key = process.env.OPENAI_API_KEY || "";
+  if (!key) return "ChatGPT-ի API բանալին դեռ դրված չէ։";
+  return completeChat(key, messages, 4096, 0.7);
+}
+
 async function handleAppChat(req, res, body) {
   const expectedGate = process.env.SPIRITUAL_AI_GATE || "";
   if (expectedGate) {
@@ -1776,32 +1911,12 @@ async function handleAppChat(req, res, body) {
   }
 
   try {
-    // ARTOPASTOR — սովորական OpenAI
-    if (isUnlimitedUser) {
-      const openaiKey = process.env.OPENAI_API_KEY || "";
-      if (!openaiKey) {
-        throw new Error("not_configured");
-      }
-
-      const messages = [
-        {
-          role: "system",
-          content:
-            "You are a helpful assistant. Answer naturally, like a normal chat, in the language the user writes in. Do not refuse everyday questions.",
-        },
-      ];
-      if (Array.isArray(body.history)) {
-        for (const turn of body.history.slice(-12)) {
-          const role = turn?.role === "assistant" ? "assistant" : "user";
-          const content = asString(turn?.content, 4000);
-          if (!content) continue;
-          messages.push({role, content});
-        }
-      }
-
-      messages.push({role: "user", content: message});
-
-      const reply = await completeChat(openaiKey, messages, 4096, 0.7);
+    const assistant = asString(body.assistant, 32);
+    if (isUnlimitedUser && assistant !== "bible") {
+      const provider = ["chatgpt", "gemini", "grok", "claude"].includes(assistant)
+        ? assistant
+        : "chatgpt";
+      const reply = await replyWithProvider(provider, body, message);
       json(res, 200, {reply});
       return;
     }
