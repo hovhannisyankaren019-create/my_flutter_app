@@ -1135,7 +1135,7 @@ function replaceForeignWords(text) {
   return out.replace(/[A-Za-z]{3,}/g, "").replace(/[ \t]{2,}/g, " ").trim();
 }
 
-async function completeChat(openaiKey, messages, maxTokens = 1800, temperature = 0.2) {
+async function completeChat(openaiKey, messages, maxTokens = 1800, temperature = 0.2, model = "") {
   const openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -1143,7 +1143,7 @@ async function completeChat(openaiKey, messages, maxTokens = 1800, temperature =
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+      model: model || process.env.OPENAI_MODEL || "gpt-4o-mini",
       temperature,
       max_tokens: maxTokens,
       messages,
@@ -1725,7 +1725,7 @@ async function handleAppVoice(req, res) {
 }
 
 const OPEN_CHAT_SYSTEM =
-  "You are a helpful assistant. Answer naturally, like a normal chat, in the language the user writes in. Do not refuse everyday questions.";
+  "You are a helpful assistant. Answer naturally, like a normal chat, in the language the user writes in. Do not refuse everyday questions. Do not limit the answer to the Bible or to spiritual topics.";
 
 function openChatMessages(body, message) {
   const messages = [{role: "system", content: OPEN_CHAT_SYSTEM}];
@@ -1759,6 +1759,12 @@ async function completeGemini(apiKey, messages) {
         systemInstruction: system ? {parts: [{text: system}]} : undefined,
         contents,
         generationConfig: {temperature: 0.7, maxOutputTokens: 4096},
+        safetySettings: [
+          {category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE"},
+          {category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE"},
+          {category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE"},
+          {category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE"},
+        ],
       }),
     },
   );
@@ -1854,9 +1860,13 @@ async function replyWithProvider(provider, body, message) {
     if (!key) return "Grok-ի API բանալին դեռ դրված չէ։";
     return completeGrok(key, messages);
   }
-  const key = process.env.OPENAI_API_KEY || "";
+  const openKey = process.env.OPENAI_OPEN_API_KEY || "";
+  const key = openKey || process.env.OPENAI_API_KEY || "";
   if (!key) return "ChatGPT-ի API բանալին դեռ դրված չէ։";
-  return completeChat(key, messages, 4096, 0.7);
+  const model = openKey
+    ? (process.env.OPENAI_OPEN_MODEL || "gpt-4o")
+    : (process.env.OPENAI_MODEL || "gpt-4o-mini");
+  return completeChat(key, messages, 4096, 0.7, model);
 }
 
 async function handleAppChat(req, res, body) {
@@ -1895,16 +1905,21 @@ async function handleAppChat(req, res, body) {
   const isUnlimitedUser =
     userEmail === "artopastor@gmail.com" ||
     userEmail === "hovhannisyankaren019@gmail.com";
+  const openChannel = asString(body.channel, 16) === "open";
+  if (openChannel && !decodedToken) {
+    json(res, 401, {error: "Login required"});
+    return;
+  }
 
   const ip = clientIp(req);
   // artopastor@gmail.com-ը rate limit չունի։
   // Մյուս բոլորը շարունակում են ունենալ 20 հարց / 10 րոպե։
-  if (!isUnlimitedUser && rateLimited(ip)) {
+  if (!openChannel && !isUnlimitedUser && rateLimited(ip)) {
     json(res, 429, {error: "Too many requests"});
     return;
   }
 
-  const message = asString(body.message, isUnlimitedUser ? 12000 : 2000);
+  const message = asString(body.message, openChannel || isUnlimitedUser ? 12000 : 2000);
   if (!message) {
     json(res, 400, {error: "Missing message"});
     return;
@@ -1912,7 +1927,7 @@ async function handleAppChat(req, res, body) {
 
   try {
     const assistant = asString(body.assistant, 32);
-    if (isUnlimitedUser && assistant !== "bible") {
+    if (openChannel || (isUnlimitedUser && assistant !== "bible")) {
       const provider = ["chatgpt", "gemini", "grok", "claude"].includes(assistant)
         ? assistant
         : "chatgpt";

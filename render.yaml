@@ -16,6 +16,10 @@ services:
         value: ararat-bible-local-gate
       - key: OPENAI_API_KEY
         sync: false
+      - key: OPENAI_OPEN_API_KEY
+        sync: false
+      - key: OPENAI_OPEN_MODEL
+        value: gpt-4o
       - key: GEMINI_API_KEY
         sync: false
       - key: ANTHROPIC_API_KEY
