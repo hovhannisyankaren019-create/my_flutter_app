@@ -664,8 +664,9 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
           ),
         ),
         centerTitle: false,
-        automaticallyImplyLeading: !widget.embedded,
-        leading: widget.embedded
+        automaticallyImplyLeading:
+            !widget.embedded && widget.chatId == null,
+        leading: widget.embedded || widget.chatId != null
             ? null
             : IconButton(
                 icon: const Icon(Icons.arrow_back),
