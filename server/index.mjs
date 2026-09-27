@@ -1748,81 +1748,139 @@ function openChatMessages(body, message, provider) {
   return messages;
 }
 
-async function completeGemini(apiKey, messages) {
-  const model = process.env.GEMINI_CHAT_MODEL || "gemini-2.5-flash";
-  const system = messages.find((item) => item.role === "system")?.content || "";
-  const contents = messages
-    .filter((item) => item.role !== "system")
-    .map((item) => ({
-      role: item.role === "assistant" ? "model" : "user",
-      parts: [{text: item.content}],
-    }));
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`,
-    {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({
-        systemInstruction: system ? {parts: [{text: system}]} : undefined,
-        contents,
-        generationConfig: {temperature: 0.7, maxOutputTokens: 4096},
-        safetySettings: [
-          {category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE"},
-          {category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE"},
-          {category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE"},
-          {category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE"},
-        ],
-      }),
-    },
-  );
-  if (!res.ok) {
-    const errText = await res.text();
-    console.error("Gemini error", res.status, errText.slice(0, 500));
-    throw new Error("upstream");
+function chatTurns(messages) {
+  const turns = [];
+  for (const item of messages) {
+    if (item.role === "system") continue;
+    const role = item.role === "assistant" ? "assistant" : "user";
+    const content = String(item.content || "").trim();
+    if (!content) continue;
+    const last = turns[turns.length - 1];
+    if (last && last.role === role) {
+      last.content = `${last.content}\n${content}`;
+    } else {
+      turns.push({role, content});
+    }
   }
-  const data = await res.json();
-  const parts = data?.candidates?.[0]?.content?.parts || [];
-  const reply = parts.map((part) => part?.text || "").join("").trim();
-  if (!reply) throw new Error("empty");
-  return reply;
+  if (turns.length > 0 && turns[0].role === "assistant") {
+    turns.unshift({role: "user", content: "Շարունակիր։"});
+  }
+  if (turns.length === 0) {
+    turns.push({role: "user", content: "Բարև։"});
+  }
+  return turns;
+}
+
+function providerFailure(name, error) {
+  let reason = "";
+  try {
+    const parsed = JSON.parse(error?.detail || "");
+    reason = parsed?.error?.message || parsed?.error?.type || "";
+  } catch {
+    reason = "";
+  }
+  reason = String(reason).replace(/AIza[\w-]+|AQ\.[\w.-]+|sk-[\w-]+/g, "").slice(0, 160);
+  console.error(name, error?.status || "", reason);
+  return reason
+    ? `${name}-ը չպատասխանեց։ ${reason}`
+    : `${name}-ը չպատասխանեց։`;
+}
+
+async function completeGemini(apiKey, messages) {
+  const system = messages.find((item) => item.role === "system")?.content || "";
+  const contents = chatTurns(messages).map((item) => ({
+    role: item.role === "assistant" ? "model" : "user",
+    parts: [{text: item.content}],
+  }));
+  const models = [
+    process.env.GEMINI_CHAT_MODEL,
+    "gemini-2.5-flash",
+    "gemini-flash-latest",
+  ].filter(Boolean);
+  let lastError = null;
+  for (const model of [...new Set(models)]) {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey,
+        },
+        body: JSON.stringify({
+          systemInstruction: system ? {parts: [{text: system}]} : undefined,
+          contents,
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 4096,
+          },
+        }),
+      },
+    );
+    const raw = await res.text();
+    if (!res.ok) {
+      lastError = new Error("upstream");
+      lastError.status = res.status;
+      lastError.detail = raw.slice(0, 500);
+      if (res.status === 404) continue;
+      break;
+    }
+    const data = JSON.parse(raw);
+    const parts = data?.candidates?.[0]?.content?.parts || [];
+    const visible = parts.filter((part) => !part?.thought);
+    const reply = (visible.length > 0 ? visible : parts)
+      .map((part) => part?.text || "")
+      .join("")
+      .trim();
+    if (reply) return reply;
+    lastError = new Error("empty");
+    lastError.detail = JSON.stringify(data?.promptFeedback || data?.candidates?.[0]?.finishReason || "");
+  }
+  throw lastError || new Error("upstream");
 }
 
 async function completeClaude(apiKey, messages) {
-  const model = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-5";
   const system = messages.find((item) => item.role === "system")?.content || "";
-  const chat = messages
-    .filter((item) => item.role !== "system")
-    .map((item) => ({
-      role: item.role === "assistant" ? "assistant" : "user",
-      content: item.content,
-    }));
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: 4096,
-      temperature: 0.7,
-      system,
-      messages: chat,
-    }),
-  });
-  if (!res.ok) {
-    const errText = await res.text();
-    console.error("Claude error", res.status, errText.slice(0, 500));
-    throw new Error("upstream");
+  const chat = chatTurns(messages);
+  const models = [
+    process.env.ANTHROPIC_MODEL,
+    "claude-sonnet-4-6",
+    "claude-sonnet-4-5",
+  ].filter(Boolean);
+  let lastError = null;
+  for (const model of [...new Set(models)]) {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 4096,
+        system,
+        messages: chat,
+      }),
+    });
+    const raw = await res.text();
+    if (!res.ok) {
+      lastError = new Error("upstream");
+      lastError.status = res.status;
+      lastError.detail = raw.slice(0, 500);
+      if (res.status === 404) continue;
+      break;
+    }
+    const data = JSON.parse(raw);
+    const reply = (data?.content || [])
+      .map((part) => part?.text || "")
+      .join("")
+      .trim();
+    if (reply) return reply;
+    lastError = new Error("empty");
+    lastError.detail = raw.slice(0, 300);
   }
-  const data = await res.json();
-  const reply = (data?.content || [])
-    .map((part) => part?.text || "")
-    .join("")
-    .trim();
-  if (!reply) throw new Error("empty");
-  return reply;
+  throw lastError || new Error("upstream");
 }
 
 async function completeGrok(apiKey, messages) {
@@ -1855,12 +1913,20 @@ async function replyWithProvider(provider, body, message) {
   if (provider === "gemini") {
     const key = process.env.GEMINI_API_KEY || "";
     if (!key) return "Gemini-ի API բանալին դեռ դրված չէ։";
-    return completeGemini(key, messages);
+    try {
+      return await completeGemini(key, messages);
+    } catch (error) {
+      return providerFailure("Gemini", error);
+    }
   }
   if (provider === "claude") {
     const key = process.env.ANTHROPIC_API_KEY || "";
     if (!key) return "Claude-ի API բանալին դեռ դրված չէ։";
-    return completeClaude(key, messages);
+    try {
+      return await completeClaude(key, messages);
+    } catch (error) {
+      return providerFailure("Claude", error);
+    }
   }
   if (provider === "grok") {
     const key = process.env.XAI_API_KEY || "";
