@@ -61,6 +61,13 @@ class FirebaseAuthService {
     );
   }
 
+  Future<UserCredential> loginWithApple() async {
+    final provider = AppleAuthProvider()
+      ..addScope('email')
+      ..addScope('name');
+    return _auth.signInWithProvider(provider);
+  }
+
   Future<void> logout() async {
     try {
       await _googleSignIn.signOut();

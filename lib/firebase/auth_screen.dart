@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../main.dart';
@@ -192,6 +193,45 @@ class _AuthScreenState extends State<AuthScreen> {
     }
   }
 
+  Future<void> _signInWithApple() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final credential = await _authService.loginWithApple();
+      final user = credential.user;
+
+      if (user != null) {
+        try {
+          await _firestoreService.createUserDocument(user);
+        } catch (_) {}
+      }
+
+      if (!mounted) return;
+      await _openAi(guest: false);
+    } catch (e) {
+      if (!mounted) return;
+
+      final error = e.toString();
+      if (error.contains('canceled') || error.contains('cancelled')) {
+        return;
+      }
+      if (error.contains('operation-not-allowed')) {
+        _showMessage('Firebase-ում Apple մուտքը միացված չէ։');
+        return;
+      }
+
+      _showMessage('Apple-ով մուտք գործել չհաջողվեց');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
   void _showMessage(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message)),
@@ -330,6 +370,34 @@ class _AuthScreenState extends State<AuthScreen> {
                   ),
                 ),
               ),
+              if (defaultTargetPlatform == TargetPlatform.iOS ||
+                  defaultTargetPlatform == TargetPlatform.android) ...[
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: OutlinedButton.icon(
+                    onPressed: _isLoading ? null : _signInWithApple,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.text(isDark),
+                      side: BorderSide(
+                        color: AppColors.olive.withValues(alpha: 0.55),
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    icon: Icon(
+                      Icons.apple,
+                      color: isDark ? AppColors.olive : AppColors.forest,
+                    ),
+                    label: const Text(
+                      'Մուտք Apple-ով',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 16),
               TextButton(
                 onPressed: _isLoading
