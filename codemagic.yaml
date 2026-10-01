@@ -16,7 +16,7 @@ workflows:
         script: flutter pub get
 
       - name: Build iOS
-        script: flutter build ipa --release --build-name=1.2.2 --build-number=33 --no-codesign
+        script: flutter build ipa --release --build-name=1.2.2 --build-number=34 --no-codesign
 
     artifacts:
       - build/ios/ipa/*.ipa
