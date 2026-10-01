@@ -2,6 +2,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
+import 'chat_firestore_service.dart';
+
 class FirebaseAuthService {
   static const _webClientId =
       '679587606372-dparr4ipppihjculmvl2pi013584mm09.apps.googleusercontent.com';
@@ -68,10 +70,60 @@ class FirebaseAuthService {
     return _auth.signInWithProvider(provider);
   }
 
+  bool get needsPasswordToDelete {
+    final user = _auth.currentUser;
+    if (user == null) return false;
+    return user.providerData.any((item) => item.providerId == 'password');
+  }
+
   Future<void> logout() async {
     try {
       await _googleSignIn.signOut();
     } catch (_) {}
     await _auth.signOut();
+  }
+
+  Future<void> deleteAccount({String? password}) async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw Exception('no-user');
+    }
+
+    final providers = user.providerData.map((item) => item.providerId).toSet();
+    if (password != null && password.isNotEmpty && user.email != null) {
+      await user.reauthenticateWithCredential(
+        EmailAuthProvider.credential(
+          email: user.email!,
+          password: password,
+        ),
+      );
+    } else if (providers.contains('google.com')) {
+      final googleUser = await _googleSignIn.signIn();
+      if (googleUser == null) {
+        throw Exception('google-canceled');
+      }
+      final googleAuth = await googleUser.authentication;
+      final idToken = googleAuth.idToken;
+      if (idToken == null || idToken.isEmpty) {
+        throw Exception('google-empty-token');
+      }
+      await user.reauthenticateWithCredential(
+        GoogleAuthProvider.credential(
+          accessToken: googleAuth.accessToken,
+          idToken: idToken,
+        ),
+      );
+    } else if (providers.contains('apple.com')) {
+      final apple = AppleAuthProvider()
+        ..addScope('email')
+        ..addScope('name');
+      await user.reauthenticateWithProvider(apple);
+    }
+
+    await ChatFirestoreService().deleteAllChats();
+    await user.delete();
+    try {
+      await _googleSignIn.signOut();
+    } catch (_) {}
   }
 }

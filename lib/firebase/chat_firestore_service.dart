@@ -140,6 +140,20 @@ class ChatFirestoreService {
         .snapshots();
   }
 
+  Future<void> deleteAllChats() async {
+    final chats = await _firestore
+        .collection('users')
+        .doc(_uid)
+        .collection('chats')
+        .get();
+
+    for (final chat in chats.docs) {
+      await deleteChat(chat.id);
+    }
+
+    await _firestore.collection('users').doc(_uid).delete();
+  }
+
   Future<void> deleteChat(String chatId) async {
     final messages = await _firestore
         .collection('users')

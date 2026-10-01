@@ -308,6 +308,150 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
     });
   }
 
+  Future<void> _onAccountPressed() async {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final action = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: AppColors.bg(isDark),
+          title: Text(
+            'Հաշիվ',
+            style: TextStyle(color: AppColors.text(isDark)),
+          ),
+          content: Text(
+            'Դուրս գալ, թե՞ ջնջել հաշիվը։',
+            style: TextStyle(color: AppColors.text(isDark), height: 1.4),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, 'logout'),
+              child: Text(
+                'Դուրս գալ',
+                style: TextStyle(color: AppColors.text(isDark)),
+              ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, 'delete'),
+              child: const Text(
+                'Ջնջել հաշիվը',
+                style: TextStyle(color: Color(0xFFB42318)),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+    if (!mounted || action == null) return;
+    if (action == 'delete') {
+      await _confirmDeleteAccount();
+      return;
+    }
+    await _signOut();
+  }
+
+  Future<void> _signOut() async {
+    try {
+      await _authService.logout();
+    } catch (_) {}
+    if (!mounted) return;
+    if (!widget.embedded) {
+      Navigator.popUntil(context, (route) => route.isFirst);
+    }
+  }
+
+  Future<void> _confirmDeleteAccount() async {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final needsPassword = _authService.needsPasswordToDelete;
+    final passwordController = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: AppColors.bg(isDark),
+          title: Text(
+            'Ջնջել հաշիվը',
+            style: TextStyle(color: AppColors.text(isDark)),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Հաշիվը և պահված զրույցները կջնջվեն։',
+                style: TextStyle(color: AppColors.text(isDark), height: 1.4),
+              ),
+              if (needsPassword) ...[
+                const SizedBox(height: 14),
+                TextField(
+                  controller: passwordController,
+                  obscureText: true,
+                  style: TextStyle(color: AppColors.text(isDark)),
+                  decoration: InputDecoration(
+                    labelText: 'Գաղտնաբառ',
+                    labelStyle: TextStyle(color: AppColors.muted(isDark)),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: Text(
+                'Չեղարկել',
+                style: TextStyle(color: AppColors.muted(isDark)),
+              ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text(
+                'Ջնջել',
+                style: TextStyle(color: Color(0xFFB42318)),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+    final password = passwordController.text;
+    passwordController.dispose();
+    if (confirmed != true || !mounted) return;
+    if (needsPassword && password.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Գրիր գաղտնաբառը։')),
+      );
+      return;
+    }
+
+    try {
+      await _authService.deleteAccount(
+        password: needsPassword ? password : null,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      final text = error.toString();
+      if (text.contains('google-canceled') || text.contains('canceled')) {
+        return;
+      }
+      if (text.contains('wrong-password') ||
+          text.contains('invalid-credential')) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Գաղտնաբառը սխալ է։')),
+        );
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Հաշիվը չհաջողվեց ջնջել։')),
+      );
+      return;
+    }
+    if (!mounted) return;
+    if (!widget.embedded) {
+      Navigator.popUntil(context, (route) => route.isFirst);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -376,15 +520,7 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
             IconButton(
               tooltip: 'Դուրս գալ',
               icon: const Icon(Icons.logout),
-              onPressed: () async {
-                try {
-                  await _authService.logout();
-                } catch (_) {}
-                if (!context.mounted) return;
-                if (!widget.embedded) {
-                  Navigator.popUntil(context, (route) => route.isFirst);
-                }
-              },
+              onPressed: _onAccountPressed,
             ),
         ],
       ),
