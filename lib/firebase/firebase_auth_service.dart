@@ -89,7 +89,6 @@ class FirebaseAuthService {
       throw Exception('no-user');
     }
 
-    final providers = user.providerData.map((item) => item.providerId).toSet();
     if (password != null && password.isNotEmpty && user.email != null) {
       await user.reauthenticateWithCredential(
         EmailAuthProvider.credential(
@@ -97,33 +96,10 @@ class FirebaseAuthService {
           password: password,
         ),
       );
-    } else if (providers.contains('google.com')) {
-      final googleUser = await _googleSignIn.signIn();
-      if (googleUser == null) {
-        throw Exception('google-canceled');
-      }
-      final googleAuth = await googleUser.authentication;
-      final idToken = googleAuth.idToken;
-      if (idToken == null || idToken.isEmpty) {
-        throw Exception('google-empty-token');
-      }
-      await user.reauthenticateWithCredential(
-        GoogleAuthProvider.credential(
-          accessToken: googleAuth.accessToken,
-          idToken: idToken,
-        ),
-      );
-    } else if (providers.contains('apple.com')) {
-      final apple = AppleAuthProvider()
-        ..addScope('email')
-        ..addScope('name');
-      await user.reauthenticateWithProvider(apple);
     }
 
     await ChatFirestoreService().deleteAllChats();
     await user.delete();
-    try {
-      await _googleSignIn.signOut();
-    } catch (_) {}
+    await logout();
   }
 }

@@ -431,9 +431,6 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
     } catch (error) {
       if (!mounted) return;
       final text = error.toString();
-      if (text.contains('google-canceled') || text.contains('canceled')) {
-        return;
-      }
       if (text.contains('wrong-password') ||
           text.contains('invalid-credential')) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -447,7 +444,7 @@ class _SpiritualAiScreenState extends State<SpiritualAiScreen> {
       return;
     }
     if (!mounted) return;
-    if (!widget.embedded) {
+    if (!widget.embedded && Navigator.of(context).canPop()) {
       Navigator.popUntil(context, (route) => route.isFirst);
     }
   }
