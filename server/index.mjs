@@ -1835,4 +1835,6 @@ server.listen(PORT, "0.0.0.0", () => {
   });
   maybePublishVerse();
   setInterval(maybePublishVerse, 60 * 1000);
+  setInterval(refreshLearned, 5 * 60 * 1000);
+  setInterval(refreshTeachers, 5 * 60 * 1000);
 });
