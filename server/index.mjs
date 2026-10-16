@@ -1555,15 +1555,36 @@ async function handleTelegram(req, res, body) {
       return;
     }
     try {
-      const publishDate = await savePendingVerseOfDay(parsed);
-      const today = yerevanParts().date;
-      const when =
-        publishDate === today ? "այսօր 09:00-ին" : "վաղը 09:00-ին";
+      const publishedDate = yerevanParts().date;
+      await saveLiveVerseOfDay({
+        text: parsed.text,
+        reference: parsed.reference,
+        publishedDate,
+      });
+      await patchVerseDoc(
+        "pending",
+        {
+          text: {stringValue: parsed.text},
+          reference: {stringValue: parsed.reference},
+          publishDate: {stringValue: publishedDate},
+          published: {booleanValue: true},
+          updatedAt: {timestampValue: new Date().toISOString()},
+        },
+        ["text", "reference", "publishDate", "published", "updatedAt"],
+      );
+      try {
+        await sendVerseNotification({
+          text: parsed.text,
+          reference: parsed.reference,
+        });
+      } catch (error) {
+        console.error("Verse notification failed", error);
+      }
       await sendTelegram(
         chatId,
         parsed.reference
-          ? `Օրվա Խոսքը պահվեց։ Կհայտնվի ${when}։\n${parsed.reference}`
-          : `Օրվա Խոսքը պահվեց։ Կհայտնվի ${when}։`,
+          ? `Օրվա Խոսքը հիմա գնաց։\n${parsed.reference}`
+          : "Օրվա Խոսքը հիմա գնաց։",
         {silent: true},
       );
     } catch (error) {
